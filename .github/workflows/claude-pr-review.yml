@@ -1,0 +1,238 @@
+# 每当有 PR 想要合并到 main 时，由 Claude 自动评审：
+# - 新建 / 重新打开 / 转为 Ready 的 PR：全量评审（main...HEAD）
+# - PR 有新提交（synchronize）：增量评审（只看新提交，并跟进上次评审的问题）
+# - 评审结论无 Critical 且无 Important：自动 squash 合并、删除 PR 分支，并给仓库所有者发送报告邮件
+#
+# 所需配置见 .github/claude-review/README.md
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+
+# 同一 PR 的新提交会取消仍在进行的旧评审，避免基于过期代码合并
+concurrency:
+  group: claude-pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write        # 合并 PR、删除分支
+  pull-requests: write   # 发表评审评论
+  issues: write
+  id-token: write        # claude-code-action 需要
+
+env:
+  WORK_DIR: ${{ github.workspace }}/.claude-review-work
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  review:
+    # 草稿 PR 不评审；fork 来的 PR 拿不到 secrets，也不应被自动合并
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Determine review scope
+        id: scope
+        env:
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK_DIR"
+          git fetch --no-tags origin "$BASE_REF"
+          MERGE_BASE=$(git merge-base "origin/$BASE_REF" "$HEAD_SHA")
+
+          # 取上一次自动评审的报告，供增量评审跟进
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- claude-auto-review -->"))] | last | .body // ""' \
+            > "$WORK_DIR/previous_review.md"
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' > "$WORK_DIR/pr_body.md"
+
+          MODE=full
+          # 增量：synchronize 事件，且旧 HEAD 仍是新 HEAD 的祖先（非 force-push），且已有过评审
+          if [ "$ACTION" = "synchronize" ] \
+             && [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
+             && git merge-base --is-ancestor "$BEFORE" "$HEAD_SHA" \
+             && [ -s "$WORK_DIR/previous_review.md" ]; then
+            MODE=incremental
+          fi
+
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "merge_base=$MERGE_BASE" >> "$GITHUB_OUTPUT"
+          echo "before=$BEFORE" >> "$GITHUB_OUTPUT"
+          echo "Review mode: $MODE"
+
+      - name: Build review prompt
+        id: prompt
+        env:
+          REPO: ${{ github.repository }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_MODE: ${{ steps.scope.outputs.mode }}
+          MERGE_BASE: ${{ steps.scope.outputs.merge_base }}
+          BEFORE: ${{ steps.scope.outputs.before }}
+        run: |
+          set -euo pipefail
+          if [ "$REVIEW_MODE" = "incremental" ]; then
+            export REVIEW_MODE_LABEL="增量"
+            export SCOPE_INSTRUCTIONS="- 本次只评审上次评审之后新增的提交：用 \`git log --no-merges --oneline $BEFORE..$HEAD_SHA\` 列出，再用 \`git show <sha>\` 逐个查看（从 main 合并进来的改动不属于本 PR，不要评审）。
+          - 需要整体上下文时可以参考完整 diff：\`git diff $MERGE_BASE $HEAD_SHA\`。"
+            export INCREMENTAL_RULES="6. 这是增量评审：逐条核对上次报告中的 Critical / Important 问题在当前 HEAD 上是否已修复；仍存在的问题要计入本次结论。"
+          else
+            export REVIEW_MODE_LABEL="全量"
+            export SCOPE_INSTRUCTIONS="- 本次评审 PR 的全部改动：\`git diff $MERGE_BASE $HEAD_SHA\`，提交列表：\`git log --no-merges --oneline $MERGE_BASE..$HEAD_SHA\`。"
+            export INCREMENTAL_RULES=""
+          fi
+          {
+            echo "text<<__CLAUDE_PROMPT_EOF__"
+            envsubst < .github/claude-review/prompt.md
+            echo "__CLAUDE_PROMPT_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: ${{ steps.prompt.outputs.text }}
+          claude_args: >-
+            --model ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-opus-5-5' }}
+            --max-turns 80
+            --allowedTools "Read,Glob,Grep,Write,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),Bash(git merge-base:*),Bash(gh pr view:*),Bash(gh pr diff:*)"
+
+      - name: Parse verdict
+        id: verdict
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          REVIEW="$WORK_DIR/review.md"
+          VERDICT="$WORK_DIR/verdict.json"
+          # 任何一个文件缺失或格式不对都视为不可合并（fail-safe）
+          if [ ! -s "$REVIEW" ] || ! jq -e '(.critical|type=="number") and (.important|type=="number")' "$VERDICT" >/dev/null 2>&1; then
+            echo "::error::Claude 没有生成有效的 review.md / verdict.json"
+            echo "critical=-1" >> "$GITHUB_OUTPUT"
+            echo "important=-1" >> "$GITHUB_OUTPUT"
+            echo "mergeable=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CRITICAL=$(jq -r '.critical' "$VERDICT")
+          IMPORTANT=$(jq -r '.important' "$VERDICT")
+          echo "critical=$CRITICAL" >> "$GITHUB_OUTPUT"
+          echo "important=$IMPORTANT" >> "$GITHUB_OUTPUT"
+          if [ "$CRITICAL" -eq 0 ] && [ "$IMPORTANT" -eq 0 ]; then
+            echo "mergeable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mergeable=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post review comment
+        if: ${{ !cancelled() && steps.verdict.outcome == 'success' }}
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_MODE: ${{ steps.scope.outputs.mode }}
+          MERGEABLE: ${{ steps.verdict.outputs.mergeable }}
+        run: |
+          set -euo pipefail
+          BODY="$WORK_DIR/comment.md"
+          {
+            echo "<!-- claude-auto-review -->"
+            echo "<!-- claude-auto-review-sha: $HEAD_SHA -->"
+            if [ -s "$WORK_DIR/review.md" ]; then
+              cat "$WORK_DIR/review.md"
+            else
+              echo "自动评审未能生成报告，请查看 [workflow 日志]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)。本 PR 不会被自动合并。"
+            fi
+            echo
+            echo "---"
+            if [ "$MERGEABLE" = "true" ]; then
+              echo "_无 Critical / Important：将自动合并并删除分支。_"
+            else
+              echo "_存在 Critical / Important（或评审失败）：不会自动合并，推送修复后将自动做增量评审。_"
+            fi
+            echo "_评审模式：${REVIEW_MODE}，提交：\`${HEAD_SHA:0:7}\`，[运行日志]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)_"
+            echo
+            echo "_Generated by [Claude Code](https://claude.ai/code)_"
+          } > "$BODY"
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY"
+
+      - name: Auto-merge and delete branch
+        id: merge
+        if: steps.verdict.outputs.mergeable == 'true'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # --match-head-commit：评审期间若有新推送则拒绝合并，交给下一次（增量）评审
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$HEAD_SHA"
+          echo "merge_sha=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json mergeCommit --jq '.mergeCommit.oid')" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare report email
+        id: owner
+        if: steps.merge.outcome == 'success'
+        env:
+          OWNER_EMAIL: ${{ vars.REVIEW_REPORT_EMAIL }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          MERGE_SHA: ${{ steps.merge.outputs.merge_sha }}
+          REVIEW_MODE: ${{ steps.scope.outputs.mode }}
+        run: |
+          set -euo pipefail
+          EMAIL="$OWNER_EMAIL"
+          if [ -z "$EMAIL" ]; then
+            # 回退：仓库所有者在 GitHub 资料中公开的邮箱
+            EMAIL=$(gh api "users/${GITHUB_REPOSITORY_OWNER}" --jq '.email // ""')
+          fi
+          if [ -z "$EMAIL" ]; then
+            echo "::warning::未配置 REVIEW_REPORT_EMAIL 且仓库所有者没有公开邮箱，跳过报告邮件"
+          fi
+          echo "email=$EMAIL" >> "$GITHUB_OUTPUT"
+          {
+            echo "**PR：** [#$PR_NUMBER $PR_TITLE]($PR_URL)  "
+            echo "**作者：** @$PR_AUTHOR  "
+            echo "**分支：** \`$HEAD_REF\` → \`$BASE_REF\`（源分支已删除）  "
+            echo "**合并提交：** \`$MERGE_SHA\`  "
+            echo "**评审模式：** $REVIEW_MODE"
+            echo
+            echo "---"
+            echo
+            cat "$WORK_DIR/review.md"
+            echo
+            echo "---"
+            echo
+            echo "[查看运行日志]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+          } > "$WORK_DIR/email.md"
+
+      - name: Email report to repository owner
+        if: steps.merge.outcome == 'success' && steps.owner.outputs.email != ''
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT || '465' }}
+          secure: ${{ (secrets.SMTP_PORT || '465') == '465' }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          from: Claude PR Review <${{ secrets.SMTP_USERNAME }}>
+          to: ${{ steps.owner.outputs.email }}
+          subject: "[${{ github.repository }}] PR #${{ github.event.pull_request.number }} 已自动合并：${{ github.event.pull_request.title }}"
+          convert_markdown: true
+          html_body: file://${{ env.WORK_DIR }}/email.md
