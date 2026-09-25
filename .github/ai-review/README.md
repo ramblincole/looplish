@@ -1,7 +1,7 @@
 # OpenAI Codex 自动 PR 评审
 
 工作流：`.github/workflows/ai-pr-review.yml`，评审提示词：`.github/ai-review/prompt.md`。
-评审 agent 为 [openai/codex-action](https://github.com/openai/codex-action)（Codex CLI），在只可写工作区、无网络的沙箱中运行。
+评审 agent 为 [openai/codex-action](https://github.com/openai/codex-action)（Codex CLI），以 `:workspace` 权限配置运行（只能写仓库工作区）。
 
 ## 行为
 
@@ -26,6 +26,7 @@ Secrets：
 Variables：
 - `REVIEW_REPORT_EMAIL`：报告收件人；未设置时使用仓库所有者 GitHub 资料里公开的邮箱
 - `OPENAI_REVIEW_MODEL`（可选）：评审使用的 OpenAI 模型，不设置时使用 Codex 默认模型
+- `OPENAI_REVIEW_EFFORT`（可选）：推理强度（如 `high`），不设置时使用 Codex 默认值
 
 另外请确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
 若 `main` 开启了分支保护（要求审批或状态检查），`GITHUB_TOKEN` 的自动合并会被拒绝，需要相应放宽规则。

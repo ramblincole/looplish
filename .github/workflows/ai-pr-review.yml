@@ -105,10 +105,11 @@ jobs:
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt-file: ${{ env.WORK_DIR }}/prompt.md
-          # 为空时使用 Codex 默认模型
+          # 为空时使用 Codex 默认模型 / 默认推理强度
           model: ${{ vars.OPENAI_REVIEW_MODEL }}
-          # 只允许写工作区（评审结果写到 $WORK_DIR），默认无网络
-          sandbox: workspace-write
+          effort: ${{ vars.OPENAI_REVIEW_EFFORT }}
+          # 只允许写工作区（评审结果写到 $WORK_DIR）
+          permission-profile: ":workspace"
           safety-strategy: drop-sudo
 
       - name: Parse verdict
