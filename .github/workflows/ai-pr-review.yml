@@ -183,6 +183,7 @@ jobs:
         if: steps.merge.outcome == 'success'
         env:
           OWNER_EMAIL: ${{ vars.REVIEW_REPORT_EMAIL }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
@@ -193,6 +194,12 @@ jobs:
         run: |
           set -euo pipefail
           EMAIL="$OWNER_EMAIL"
+          if [ -z "$SMTP_SERVER" ]; then
+            # 未配置 SMTP：跳过邮件，不影响评审和合并
+            echo "::notice::未配置 SMTP_SERVER，跳过报告邮件"
+            echo "email=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -z "$EMAIL" ]; then
             # 回退：仓库所有者在 GitHub 资料中公开的邮箱
             EMAIL=$(gh api "users/${GITHUB_REPOSITORY_OWNER}" --jq '.email // ""')
