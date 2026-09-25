@@ -45,8 +45,6 @@ jobs:
       - name: Determine review scope
         id: scope
         env:
-          ACTION: ${{ github.event.action }}
-          BEFORE: ${{ github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
@@ -55,28 +53,31 @@ jobs:
           git fetch --no-tags origin "$BASE_REF"
           MERGE_BASE=$(git merge-base "origin/$BASE_REF" "$HEAD_SHA")
 
-          # 上一次自动评审的报告：只认 GitHub Actions 机器人发的评论，防止他人伪造标记跳过旧问题
+          # 上一次“成功”的自动评审：只认 GitHub Actions 机器人发的、带已评审 SHA 标记的评论，防止伪造
           gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments \
-            --jq '[.comments[] | select((.author.login == "github-actions" or .author.login == "github-actions[bot]") and (.body | contains("<!-- ai-auto-review -->")))] | last | .body // ""' \
+            --jq '[.comments[] | select((.author.login == "github-actions" or .author.login == "github-actions[bot]") and (.body | contains("<!-- ai-auto-review-sha: ")))] | last | .body // ""' \
             > "$WORK_DIR/previous_review.md"
           gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' > "$WORK_DIR/pr_body.md"
+          PREV_SHA=$(grep -oE '<!-- ai-auto-review-sha: [0-9a-f]{40} -->' "$WORK_DIR/previous_review.md" | tail -n1 | grep -oE '[0-9a-f]{40}' || true)
 
+          # 增量的起点是上次成功评审的提交（而不是本次推送事件的 before），被取消的评审不会漏审。
+          # 以下情况回退全量：没有成功评审过、上次评审的提交已不在历史中（force-push）、
+          # 与 HEAD 相同、或新提交中含合并提交（冲突解决的改动在 --no-merges 下看不到）。
           MODE=full
-          # 增量：synchronize 事件，且旧 HEAD 仍是新 HEAD 的祖先（非 force-push），且已有过评审
-          if [ "$ACTION" = "synchronize" ] \
-             && [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
-             && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
-             && git merge-base --is-ancestor "$BEFORE" "$HEAD_SHA" \
-             && [ -s "$WORK_DIR/previous_review.md" ]; then
+          if [ -n "$PREV_SHA" ] && [ "$PREV_SHA" != "$HEAD_SHA" ] \
+             && git cat-file -e "$PREV_SHA^{commit}" 2>/dev/null \
+             && git merge-base --is-ancestor "$PREV_SHA" "$HEAD_SHA" \
+             && [ -z "$(git rev-list --merges "$PREV_SHA..$HEAD_SHA")" ]; then
             MODE=incremental
           fi
 
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
           echo "merge_base=$MERGE_BASE" >> "$GITHUB_OUTPUT"
-          echo "before=$BEFORE" >> "$GITHUB_OUTPUT"
-          echo "Review mode: $MODE"
+          echo "before=$PREV_SHA" >> "$GITHUB_OUTPUT"
+          echo "Review mode: $MODE (last reviewed: ${PREV_SHA:-none})"
 
       - name: Build review prompt
+        id: prompt
         env:
           REPO: ${{ github.repository }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -97,10 +98,12 @@ jobs:
           if [ "$REVIEW_MODE" = "incremental" ]; then
             export REVIEW_MODE_LABEL="增量"
             export INCREMENTAL_RULES="5. 这是增量评审：附件只包含上次评审后新增的提交（不含从 main 合并进来的改动）。逐条核对上次报告中的 Critical / Important 在当前 HEAD 上是否已修复，仍存在的计入本次条数；报告在 Important 之后追加「上次问题跟进：」，逐条标注 已修复 / 仍存在 / 部分修复。"
+            RANGE_FROM="$BEFORE"
             git log --no-merges -p --format='commit %H%n%s%n' "$BEFORE..$HEAD_SHA" -- . "${EXCLUDES[@]}" > "$WORK_DIR/changes.diff"
           else
             export REVIEW_MODE_LABEL="全量"
             export INCREMENTAL_RULES=""
+            RANGE_FROM="$MERGE_BASE"
             { git log --no-merges --format='- %h %s' "$MERGE_BASE..$HEAD_SHA"; echo
               git diff "$MERGE_BASE" "$HEAD_SHA" -- . "${EXCLUDES[@]}"; } > "$WORK_DIR/changes.diff"
           fi
@@ -111,6 +114,23 @@ jobs:
           fi
 
           DIFF_BYTES=$(wc -c < "$WORK_DIR/changes.diff")
+
+          # 覆盖是否完整：有被过滤的文件或 diff 被截断时，模型没看到全部改动，禁止自动合并
+          git diff --name-only "$RANGE_FROM" "$HEAD_SHA" | sort > "$WORK_DIR/all_files.txt"
+          git diff --name-only "$RANGE_FROM" "$HEAD_SHA" -- . "${EXCLUDES[@]}" | sort > "$WORK_DIR/reviewed_files.txt"
+          comm -23 "$WORK_DIR/all_files.txt" "$WORK_DIR/reviewed_files.txt" > "$WORK_DIR/skipped_files.txt"
+          COMPLETE=true
+          COVERAGE_NOTE=""
+          if [ -s "$WORK_DIR/skipped_files.txt" ]; then
+            COMPLETE=false
+            COVERAGE_NOTE="有 $(wc -l < "$WORK_DIR/skipped_files.txt") 个锁文件 / 构建产物未送审"
+          fi
+          if [ "$DIFF_BYTES" -gt "$MAX_DIFF_BYTES" ]; then
+            COMPLETE=false
+            COVERAGE_NOTE="${COVERAGE_NOTE:+$COVERAGE_NOTE；}diff 超过 ${MAX_DIFF_BYTES} 字节被截断"
+          fi
+          echo "complete=$COMPLETE" >> "$GITHUB_OUTPUT"
+          echo "coverage_note=$COVERAGE_NOTE" >> "$GITHUB_OUTPUT"
           {
             # 只替换列出的变量，diff 等附件原样拼接，不做替换
             envsubst '$PR_NUMBER $PR_TITLE $REPO $BASE_REF $HEAD_REF $HEAD_SHA $REVIEW_MODE_LABEL $INCREMENTAL_RULES' < "$WORK_DIR/prompt.tpl"
@@ -133,6 +153,9 @@ jobs:
       - name: Run OpenAI Codex review
         id: codex
         timeout-minutes: 20
+        # codex exec 有时输出最终结论后进程不退出，导致本步超时；
+        # 结论文件此时已写好，由下一步校验后照常使用，校验不过则不合并
+        continue-on-error: true
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -162,6 +185,9 @@ jobs:
       - name: Parse verdict
         id: verdict
         if: ${{ !cancelled() }}
+        env:
+          COMPLETE: ${{ steps.prompt.outputs.complete }}
+          COVERAGE_NOTE: ${{ steps.prompt.outputs.coverage_note }}
         run: |
           set -euo pipefail
           RESULT="$WORK_DIR/result.json"
@@ -171,17 +197,30 @@ jobs:
             echo "critical=-1" >> "$GITHUB_OUTPUT"
             echo "important=-1" >> "$GITHUB_OUTPUT"
             echo "mergeable=false" >> "$GITHUB_OUTPUT"
+            echo "block_reason=评审失败，没有得到有效结论" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           jq -r '.report' "$RESULT" > "$WORK_DIR/review.md"
           CRITICAL=$(jq -r '.critical' "$RESULT")
           IMPORTANT=$(jq -r '.important' "$RESULT")
+          CONCLUSION=$(jq -r '.conclusion' "$RESULT")
           echo "critical=$CRITICAL" >> "$GITHUB_OUTPUT"
           echo "important=$IMPORTANT" >> "$GITHUB_OUTPUT"
-          if [ "$CRITICAL" -eq 0 ] && [ "$IMPORTANT" -eq 0 ]; then
+          echo "reviewed=true" >> "$GITHUB_OUTPUT"
+          # 四个条件全部满足才自动合并：无 Critical、无 Important、结论为可以合并、改动全部送审
+          REASON=""
+          if [ "$CRITICAL" -ne 0 ] || [ "$IMPORTANT" -ne 0 ]; then
+            REASON="存在 Critical / Important"
+          elif [ "$CONCLUSION" != "可以合并" ]; then
+            REASON="问题计数为 0，但结论是「${CONCLUSION}」，两者不一致"
+          elif [ "$COMPLETE" != "true" ]; then
+            REASON="评审覆盖不完整：${COVERAGE_NOTE}，需人工确认后合并"
+          fi
+          if [ -z "$REASON" ]; then
             echo "mergeable=true" >> "$GITHUB_OUTPUT"
           else
             echo "mergeable=false" >> "$GITHUB_OUTPUT"
+            echo "block_reason=$REASON" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Post review comment
@@ -190,12 +229,15 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           REVIEW_MODE: ${{ steps.scope.outputs.mode }}
           MERGEABLE: ${{ steps.verdict.outputs.mergeable }}
+          REVIEWED: ${{ steps.verdict.outputs.reviewed }}
+          BLOCK_REASON: ${{ steps.verdict.outputs.block_reason }}
         run: |
           set -euo pipefail
           BODY="$WORK_DIR/comment.md"
           {
             echo "<!-- ai-auto-review -->"
-            echo "<!-- ai-auto-review-sha: $HEAD_SHA -->"
+            # 只有评审成功才记录已评审的提交，下一次增量从这里开始
+            if [ "$REVIEWED" = "true" ]; then echo "<!-- ai-auto-review-sha: $HEAD_SHA -->"; fi
             if [ -s "$WORK_DIR/review.md" ]; then
               cat "$WORK_DIR/review.md"
             else
@@ -206,7 +248,7 @@ jobs:
             if [ "$MERGEABLE" = "true" ]; then
               echo "_无 Critical / Important：将自动合并并删除分支。_"
             else
-              echo "_存在 Critical / Important（或评审失败）：不会自动合并，推送修复后将自动做增量评审。_"
+              echo "_不会自动合并：${BLOCK_REASON}。推送新提交后会自动重新评审。_"
             fi
             echo "_评审模式：${REVIEW_MODE}，提交：\`${HEAD_SHA:0:7}\`，[运行日志]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)_"
             echo
