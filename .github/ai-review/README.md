@@ -1,7 +1,12 @@
 # OpenAI Codex 自动 PR 评审
 
 工作流：`.github/workflows/ai-pr-review.yml`，评审提示词：`.github/ai-review/prompt.md`。
-评审 agent 为 [openai/codex-action](https://github.com/openai/codex-action)（Codex CLI），以 `:workspace` 权限配置运行（只能写仓库工作区）。
+评审 agent 为 [openai/codex-action](https://github.com/openai/codex-action)（Codex CLI），以 `:read-only` 权限运行：
+不能创建或修改任何文件，评审结果只通过按 JSON schema 约束的最终回复输出，由工作流发到 PR 评论。
+
+- 超时：Codex 评审一步最多 20 分钟，整个任务最多 30 分钟。
+- 提示词模板从目标分支（`main`）读取，PR 改模板影响不到自己的评审。
+- 增量评审只采信 GitHub Actions 机器人发的上一次评审评论。
 
 ## 行为
 
@@ -26,7 +31,15 @@ Secrets：
 Variables：
 - `REVIEW_REPORT_EMAIL`：报告收件人；未设置时使用仓库所有者 GitHub 资料里公开的邮箱
 - `OPENAI_REVIEW_MODEL`（可选）：评审使用的 OpenAI 模型，不设置时使用 Codex 默认模型
-- `OPENAI_REVIEW_EFFORT`（可选）：推理强度（如 `high`），不设置时使用 Codex 默认值
+- `OPENAI_REVIEW_EFFORT`（可选）：推理强度，默认 `medium`
+- `AI_REVIEW_MAX_DIFF_BYTES`（可选）：送给模型的 diff 上限（字节），默认 `60000`，超出部分截断
 
 另外请确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
 若 `main` 开启了分支保护（要求审批或状态检查），`GITHUB_TOKEN` 的自动合并会被拒绝，需要相应放宽规则。
+
+## 成本控制
+
+- diff 由工作流预先生成并直接放进提示词，Codex 不用多轮调用工具去拉取改动；只在需要核实上下文时读文件。
+- 锁文件、`*.min.*`、`*.map`、`dist/`、`build/`、`vendor/` 不送给模型；diff 超过上限会截断，并附文件列表。
+- 有新提交时只做增量评审；同一 PR 的新推送会取消还在运行的旧评审。
+- 推理强度默认 `medium`。想再省可以把 `OPENAI_REVIEW_MODEL` 换成更便宜的模型，或把 `OPENAI_REVIEW_EFFORT` 设为 `low`（漏报风险会上升）。
