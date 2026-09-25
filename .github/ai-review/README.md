@@ -1,6 +1,7 @@
-# Claude 自动 PR 评审
+# OpenAI Codex 自动 PR 评审
 
-工作流：`.github/workflows/claude-pr-review.yml`，评审提示词：`.github/claude-review/prompt.md`。
+工作流：`.github/workflows/ai-pr-review.yml`，评审提示词：`.github/ai-review/prompt.md`。
+评审 agent 为 [openai/codex-action](https://github.com/openai/codex-action)（Codex CLI），在只可写工作区、无网络的沙箱中运行。
 
 ## 行为
 
@@ -18,14 +19,13 @@
 ## 需要配置（Settings → Secrets and variables → Actions）
 
 Secrets：
-- `ANTHROPIC_API_KEY` 或 `CLAUDE_CODE_OAUTH_TOKEN`（二选一）
+- `OPENAI_API_KEY`
 - `SMTP_SERVER`、`SMTP_PORT`（默认 465，走 SSL；587 走 STARTTLS）、`SMTP_USERNAME`、`SMTP_PASSWORD`
   - Gmail 示例：`smtp.gmail.com` / `465` / 你的 Gmail 地址 / 应用专用密码
 
 Variables：
 - `REVIEW_REPORT_EMAIL`：报告收件人；未设置时使用仓库所有者 GitHub 资料里公开的邮箱
-- `CLAUDE_REVIEW_MODEL`（可选）：评审使用的模型，默认 `claude-opus-5-5`
+- `OPENAI_REVIEW_MODEL`（可选）：评审使用的 OpenAI 模型，不设置时使用 Codex 默认模型
 
-另外需要安装 Claude GitHub App（https://github.com/apps/claude），
-并确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
+另外请确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
 若 `main` 开启了分支保护（要求审批或状态检查），`GITHUB_TOKEN` 的自动合并会被拒绝，需要相应放宽规则。
