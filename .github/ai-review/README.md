@@ -4,7 +4,7 @@
 评审 agent 为 [openai/codex-action](https://github.com/openai/codex-action)（Codex CLI），以 `:read-only` 权限运行：
 不能创建或修改任何文件，评审结果只通过按 JSON schema 约束的最终回复输出，由工作流发到 PR 评论。
 
-- 超时：Codex 评审一步最多 20 分钟，整个任务最多 30 分钟。`codex exec` 有时给出结论后进程不退出，本步会一直等到超时；这时结论文件已经写好，后续步骤校验通过后照常发评论、判断合并。
+- 超时：`codex exec` 有时写出最终结论后进程不退出，而 GitHub 对 action 步骤设置的 `timeout-minutes` 也结束不了它。所以在 Codex 步骤之前会启动一个后台看门狗：结论文件一成为完整的 JSON，就结束 `codex exec`；最多等 19 分钟。它只结束进程，不改变 codex-action 的 Key 隔离代理和只读沙箱。整个任务最多 30 分钟。
 - 提示词模板从目标分支（`main`）读取，PR 改模板影响不到自己的评审。例外：模板首次引入（`main` 上还没有）时只能读取 PR 自带的版本。
 - 增量评审只采信 GitHub Actions 机器人发的、评审成功的上一次评论，并从它记录的提交开始评审（被取消或失败的评审不算）。
 

@@ -150,11 +150,35 @@ jobs:
           } > "$WORK_DIR/prompt.md"
           echo "Prompt size: $(wc -c < "$WORK_DIR/prompt.md") bytes (diff: $DIFF_BYTES bytes)"
 
+      - name: Start Codex watchdog
+        run: |
+          # codex exec 有时写出最终结论后进程不退出，而对 action 步骤设置的 timeout-minutes 并不会结束它。
+          # 后台看门狗：结论文件成为完整 JSON 后结束 codex exec；最多等 19 分钟。
+          # 只结束进程，不改变 codex-action 的 Key 隔离代理和只读沙箱。
+          RESULT="$WORK_DIR/result.json"
+          rm -f "$RESULT"
+          nohup bash -c '
+            RESULT="$1"; deadline=$((SECONDS + 19 * 60))
+            # 正则写法保证它不会匹配到看门狗自己的命令行
+            PATTERN="codex(\.js)? exec --skip-git-repo-check"
+            stop_codex() { pgrep -f -- "$PATTERN" | grep -vx "$$" | xargs -r kill "-$1" 2>/dev/null || true; }
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              if jq -e ".report" "$RESULT" >/dev/null 2>&1; then
+                echo "$(date -u +%T) 已拿到最终结论，结束 codex exec"
+                sleep 5; stop_codex TERM; sleep 5; stop_codex KILL
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "$(date -u +%T) 超过 19 分钟，强制结束 codex exec"
+            stop_codex KILL
+          ' watchdog "$RESULT" > "$WORK_DIR/watchdog.log" 2>&1 &
+          echo "watchdog pid: $!"
+
       - name: Run OpenAI Codex review
         id: codex
         timeout-minutes: 20
-        # codex exec 有时输出最终结论后进程不退出，导致本步超时；
-        # 结论文件此时已写好，由下一步校验后照常使用，校验不过则不合并
+        # 看门狗结束 codex exec 后本步会以失败结束；结论文件已写好，由下一步校验后照常使用，校验不过则不合并
         continue-on-error: true
         uses: openai/codex-action@v1
         with:
@@ -190,6 +214,7 @@ jobs:
           COVERAGE_NOTE: ${{ steps.prompt.outputs.coverage_note }}
         run: |
           set -euo pipefail
+          cat "$WORK_DIR/watchdog.log" 2>/dev/null || true
           RESULT="$WORK_DIR/result.json"
           # 结果缺失或格式不对都视为不可合并（fail-safe）
           if ! jq -e '(.critical|type=="number") and (.important|type=="number") and (.report|type=="string" and length>0)' "$RESULT" >/dev/null 2>&1; then
