@@ -7,7 +7,7 @@
     ".": "./src/generated.ts"
   },
   "scripts": {
-    "generate": "openapi-typescript openapi.json -o src/generated.ts",
+    "generate": "openapi-typescript openapi.json -o src/generated.ts --default-non-nullable false",
     "check": "tsc --noEmit"
   },
   "devDependencies": {

@@ -1,8 +1,10 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from looplish_api.api.dependencies import Container
 from looplish_api.api.errors import install_error_handlers, install_request_guards
@@ -10,6 +12,32 @@ from looplish_api.api.v1.config_routes import router as config_router
 from looplish_api.api.v1.health_routes import router as health_router
 from looplish_api.api.v1.job_routes import router as job_router
 from looplish_api.presentation.static_site import mount_static_site
+
+PROBLEM_MEDIA_TYPE = "application/problem+json"
+FRAMEWORK_VALIDATION_SCHEMAS = ("HTTPValidationError", "ValidationError")
+
+
+def _problem_openapi(app: FastAPI) -> dict[str, Any]:
+    """生成与真实行为一致的契约：错误响应是 Problem Details（application/problem+json）。"""
+    if app.openapi_schema is not None:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title, version=app.version, openapi_version=app.openapi_version, routes=app.routes
+    )
+    for operations in schema.get("paths", {}).values():
+        for operation in operations.values():
+            responses = operation.get("responses", {})
+            # 框架自动声明的 422 结构与实际返回不符；实际的 422 已包含在 4XX 的 Problem Details 中。
+            responses.pop("422", None)
+            for code, response in responses.items():
+                content = response.get("content", {})
+                if code in {"4XX", "5XX"} and "application/json" in content:
+                    content[PROBLEM_MEDIA_TYPE] = content.pop("application/json")
+    components = schema.get("components", {}).get("schemas", {})
+    for name in FRAMEWORK_VALIDATION_SCHEMAS:
+        components.pop(name, None)
+    app.openapi_schema = schema
+    return schema
 
 
 def create_app(container: Container) -> FastAPI:
@@ -28,6 +56,7 @@ def create_app(container: Container) -> FastAPI:
 
     app = FastAPI(title="Looplish API", version="0.1.0", lifespan=lifespan)
     app.state.container = container
+    app.openapi = lambda: _problem_openapi(app)  # type: ignore[method-assign]
     settings = container.settings
     app.add_middleware(
         CORSMiddleware,

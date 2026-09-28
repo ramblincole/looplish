@@ -1,0 +1,1457 @@
+{
+  "components": {
+    "schemas": {
+      "Body_upload_job_api_v1_jobs_upload_post": {
+        "properties": {
+          "asrBackend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asrbackend"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "hardPause": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hardpause"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "leadPad": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leadpad"
+          },
+          "makeClips": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Makeclips"
+          },
+          "maxDuration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxduration"
+          },
+          "minDuration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minduration"
+          },
+          "subtitleSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtitlesource"
+          },
+          "tailPad": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tailpad"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_job_api_v1_jobs_upload_post",
+        "type": "object"
+      },
+      "ConfigDefaultsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "asrBackend": {
+            "title": "Asrbackend",
+            "type": "string"
+          },
+          "asrModel": {
+            "title": "Asrmodel",
+            "type": "string"
+          },
+          "hardPause": {
+            "title": "Hardpause",
+            "type": "number"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "leadPad": {
+            "title": "Leadpad",
+            "type": "number"
+          },
+          "maxDuration": {
+            "title": "Maxduration",
+            "type": "number"
+          },
+          "minDuration": {
+            "title": "Minduration",
+            "type": "number"
+          },
+          "subtitleSource": {
+            "enum": [
+              "auto",
+              "existing",
+              "asr"
+            ],
+            "title": "Subtitlesource",
+            "type": "string"
+          },
+          "tailPad": {
+            "title": "Tailpad",
+            "type": "number"
+          }
+        },
+        "required": [
+          "asrBackend",
+          "asrModel",
+          "language",
+          "subtitleSource",
+          "minDuration",
+          "maxDuration",
+          "hardPause",
+          "leadPad",
+          "tailPad"
+        ],
+        "title": "ConfigDefaultsResponse",
+        "type": "object"
+      },
+      "ConfigResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "allowLocalPaths": {
+            "title": "Allowlocalpaths",
+            "type": "boolean"
+          },
+          "asrBackends": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Asrbackends",
+            "type": "array"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/ConfigDefaultsResponse"
+          }
+        },
+        "required": [
+          "asrBackends",
+          "allowLocalPaths",
+          "defaults"
+        ],
+        "title": "ConfigResponse",
+        "type": "object"
+      },
+      "CreateJobRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "asrBackend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asrbackend"
+          },
+          "hardPause": {
+            "default": 0.75,
+            "maximum": 5.0,
+            "minimum": 0.1,
+            "title": "Hardpause",
+            "type": "number"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "en",
+            "title": "Language"
+          },
+          "leadPad": {
+            "default": 0.2,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Leadpad",
+            "type": "number"
+          },
+          "makeClips": {
+            "default": false,
+            "title": "Makeclips",
+            "type": "boolean"
+          },
+          "maxDuration": {
+            "default": 14.0,
+            "maximum": 60.0,
+            "minimum": 2.0,
+            "title": "Maxduration",
+            "type": "number"
+          },
+          "minDuration": {
+            "default": 1.0,
+            "maximum": 10.0,
+            "minimum": 0.2,
+            "title": "Minduration",
+            "type": "number"
+          },
+          "source": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "subtitleSource": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "existing",
+              "asr"
+            ],
+            "title": "Subtitlesource",
+            "type": "string"
+          },
+          "tailPad": {
+            "default": 0.4,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Tailpad",
+            "type": "number"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "CreateJobRequest",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "JobPageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "JobPageResponse",
+        "type": "object"
+      },
+      "JobResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "sentenceCount": {
+            "title": "Sentencecount",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "downloading",
+                  "preparingAudio",
+                  "transcribing",
+                  "segmenting"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "title",
+          "status",
+          "stage",
+          "progress",
+          "message",
+          "error",
+          "createdAt",
+          "updatedAt",
+          "sentenceCount"
+        ],
+        "title": "JobResponse",
+        "type": "object"
+      },
+      "JobResultResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "audioUrl": {
+            "title": "Audiourl",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "hasClips": {
+            "title": "Hasclips",
+            "type": "boolean"
+          },
+          "jobId": {
+            "title": "Jobid",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "sentenceCount": {
+            "title": "Sentencecount",
+            "type": "integer"
+          },
+          "sentences": {
+            "items": {
+              "$ref": "#/components/schemas/SentenceResponse"
+            },
+            "title": "Sentences",
+            "type": "array"
+          },
+          "sourceUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceurl"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "transcriptSource": {
+            "title": "Transcriptsource",
+            "type": "string"
+          },
+          "uploader": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploader"
+          }
+        },
+        "required": [
+          "jobId",
+          "title",
+          "sourceUrl",
+          "uploader",
+          "thumbnailUrl",
+          "duration",
+          "language",
+          "transcriptSource",
+          "audioUrl",
+          "createdAt",
+          "sentenceCount",
+          "hasClips",
+          "sentences"
+        ],
+        "title": "JobResultResponse",
+        "type": "object"
+      },
+      "JobStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed"
+        ],
+        "title": "JobStatus",
+        "type": "string"
+      },
+      "ProblemDetails": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "requestId": {
+            "title": "Requestid",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "detail",
+          "requestId"
+        ],
+        "title": "ProblemDetails",
+        "type": "object"
+      },
+      "ResegmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "hardPause": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 0.1,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hardpause"
+          },
+          "leadPad": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leadpad"
+          },
+          "maxDuration": {
+            "anyOf": [
+              {
+                "maximum": 60.0,
+                "minimum": 2.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxduration"
+          },
+          "minDuration": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.2,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minduration"
+          },
+          "tailPad": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tailpad"
+          }
+        },
+        "title": "ResegmentRequest",
+        "type": "object"
+      },
+      "SentenceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "duration": {
+            "title": "Duration",
+            "type": "number"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "speechEnd": {
+            "title": "Speechend",
+            "type": "number"
+          },
+          "speechStart": {
+            "title": "Speechstart",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/WordResponse"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": [
+          "index",
+          "start",
+          "end",
+          "speechStart",
+          "speechEnd",
+          "duration",
+          "text",
+          "words"
+        ],
+        "title": "SentenceResponse",
+        "type": "object"
+      },
+      "WordResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probability"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "text",
+          "probability"
+        ],
+        "title": "WordResponse",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Looplish API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/config": {
+      "get": {
+        "operationId": "get_config_api_v1_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "list_jobs_api_v1_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "List Jobs",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "post": {
+        "operationId": "create_job_api_v1_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Create Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/upload": {
+      "post": {
+        "operationId": "upload_job_api_v1_jobs_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_job_api_v1_jobs_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Upload Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "delete": {
+        "operationId": "delete_job_api_v1_jobs__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Delete Job",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "get": {
+        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Get Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/audio": {
+      "get": {
+        "operationId": "get_audio_api_v1_jobs__job_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Get Audio",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/bundle.zip": {
+      "get": {
+        "operationId": "get_bundle_api_v1_jobs__job_id__bundle_zip_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "clips",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Clips",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Get Bundle",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/clips/{index}": {
+      "get": {
+        "operationId": "get_clip_api_v1_jobs__job_id__clips__index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Get Clip",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/resegment": {
+      "post": {
+        "operationId": "resegment_api_v1_jobs__job_id__resegment_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResegmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Resegment",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/result": {
+      "get": {
+        "operationId": "get_result_api_v1_jobs__job_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Get Result",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/subtitles.{fmt}": {
+      "get": {
+        "operationId": "get_subtitles_api_v1_jobs__job_id__subtitles__fmt__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fmt",
+            "required": true,
+            "schema": {
+              "enum": [
+                "srt",
+                "vtt",
+                "txt"
+              ],
+              "title": "Fmt",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "4XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          },
+          "5XX": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Problem Details"
+          }
+        },
+        "summary": "Get Subtitles",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Live Health Live Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Live",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

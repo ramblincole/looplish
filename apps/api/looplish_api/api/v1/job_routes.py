@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from looplish_api.api.dependencies import ContainerDep
 from looplish_api.api.schemas import (
+    PROBLEM_RESPONSES,
     CreateJobRequest,
     JobOptionsRequest,
     JobPageResponse,
@@ -24,7 +25,7 @@ from looplish_api.application.commands import (
 )
 from looplish_api.domain.models import JobQuery, JobStatus
 
-router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
+router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"], responses=PROBLEM_RESPONSES)
 FORBIDDEN_IN_FILENAME = set('\\/"\r\n:*?<>|;')
 SUBTITLE_TYPES = {
     "srt": "application/x-subrip; charset=utf-8",
