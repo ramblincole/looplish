@@ -177,6 +177,7 @@ jobs:
           COMPLETE: ${{ steps.prompt.outputs.complete }}
           COVERAGE_NOTE: ${{ steps.prompt.outputs.coverage_note }}
           STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
         run: |
           set -euo pipefail
           RESULT="$WORK_DIR/result.json"
@@ -187,7 +188,11 @@ jobs:
             echo "critical=-1" >> "$GITHUB_OUTPUT"
             echo "important=-1" >> "$GITHUB_OUTPUT"
             echo "mergeable=false" >> "$GITHUB_OUTPUT"
-            echo "block_reason=评审失败，没有得到有效结论" >> "$GITHUB_OUTPUT"
+            if [ "$HAS_API_KEY" != "true" ]; then
+              echo "block_reason=评审失败：仓库未配置 Secret ANTHROPIC_API_KEY" >> "$GITHUB_OUTPUT"
+            else
+              echo "block_reason=评审失败，没有得到有效结论" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
           jq -r '.report' "$RESULT" > "$WORK_DIR/review.md"
