@@ -153,8 +153,40 @@ jobs:
           DELIM="PROMPT_EOF_$(openssl rand -hex 16)"
           { echo "text<<$DELIM"; cat "$WORK_DIR/prompt.md"; echo; echo "$DELIM"; } >> "$GITHUB_OUTPUT"
 
+      - name: Check model endpoint
+        id: preflight
+        env:
+          API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BASE_URL: ${{ vars.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' }}
+          MODEL: ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-opus-5' }}
+        run: |
+          # 用和 Claude Code 相同的方式（x-api-key + /v1/messages）发一个极小的请求，
+          # 接口地址、模型名或 Key 有误时立即失败并给出原因，而不是让 Claude Code 在后台反复重试
+          if [ -z "$API_KEY" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "reason=仓库未配置 Secret ANTHROPIC_API_KEY" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BODY=$(jq -nc --arg m "$MODEL" '{model:$m,max_tokens:16,messages:[{role:"user",content:"ping"}]}')
+          rm -f "$WORK_DIR/preflight.json"
+          CODE=$(curl -sS -m 60 -o "$WORK_DIR/preflight.json" -w '%{http_code}' "${BASE_URL%/}/v1/messages" \
+            -H "x-api-key: $API_KEY" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" \
+            -d "$BODY") || true
+          [ -n "$CODE" ] || CODE=000
+          if [ "$CODE" = "200" ]; then
+            echo "模型接口预检通过：$BASE_URL，模型 $MODEL"
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            MSG=$(jq -r '.error.message // .message // empty' "$WORK_DIR/preflight.json" 2>/dev/null | head -c 300 | tr '\n' ' ')
+            [ -n "$MSG" ] || MSG=$(head -c 300 "$WORK_DIR/preflight.json" 2>/dev/null | tr '\n' ' ')
+            echo "::error::模型接口预检失败：HTTP $CODE，地址 $BASE_URL，模型 $MODEL：$MSG"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "reason=模型接口预检失败（HTTP $CODE，模型 $MODEL）：${MSG:-无响应或无法连接接口地址}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run Claude Code review
         id: claude
+        if: steps.preflight.outputs.ok == 'true'
         timeout-minutes: 20
         # 失败或超时由下一步统一处理：拿不到有效结论就不合并
         continue-on-error: true
@@ -170,6 +202,8 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}
           prompt: ${{ steps.prompt.outputs.text }}
+          # 排查问题时把 Variable AI_REVIEW_DEBUG 设为 true，可在日志中看到 Claude Code 的完整输出
+          show_full_output: ${{ vars.AI_REVIEW_DEBUG == 'true' }}
           # 只读工具 + git 查询命令；结论按 --json-schema 通过 structured_output 输出，Claude 不写任何文件
           claude_args: >-
             --model ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-opus-5' }}
@@ -184,7 +218,8 @@ jobs:
           COMPLETE: ${{ steps.prompt.outputs.complete }}
           COVERAGE_NOTE: ${{ steps.prompt.outputs.coverage_note }}
           STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
-          HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          PREFLIGHT_OK: ${{ steps.preflight.outputs.ok }}
+          PREFLIGHT_REASON: ${{ steps.preflight.outputs.reason }}
         run: |
           set -euo pipefail
           RESULT="$WORK_DIR/result.json"
@@ -195,8 +230,8 @@ jobs:
             echo "critical=-1" >> "$GITHUB_OUTPUT"
             echo "important=-1" >> "$GITHUB_OUTPUT"
             echo "mergeable=false" >> "$GITHUB_OUTPUT"
-            if [ "$HAS_API_KEY" != "true" ]; then
-              echo "block_reason=评审失败：仓库未配置 Secret ANTHROPIC_API_KEY" >> "$GITHUB_OUTPUT"
+            if [ "$PREFLIGHT_OK" != "true" ]; then
+              echo "block_reason=评审失败：${PREFLIGHT_REASON}" >> "$GITHUB_OUTPUT"
             else
               echo "block_reason=评审失败，没有得到有效结论" >> "$GITHUB_OUTPUT"
             fi
