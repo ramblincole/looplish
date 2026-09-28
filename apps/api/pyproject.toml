@@ -54,6 +54,6 @@ plugins = ["pydantic.mypy"]
 packages = ["looplish_api"]
 
 [[tool.mypy.overrides]]
-# yt-dlp 不带类型标注，适配器内按 Any 处理其返回值。
-module = ["yt_dlp", "yt_dlp.*"]
+# yt-dlp 不带类型标注；faster-whisper 是可选依赖（local-asr），未安装时同样按 Any 处理。
+module = ["yt_dlp", "yt_dlp.*", "faster_whisper", "faster_whisper.*"]
 ignore_missing_imports = true
