@@ -26,6 +26,12 @@
 - **无 Critical 且无 Important** 时：自动 squash 合并、删除 PR 分支，并把报告邮件发给仓库所有者。
 - 以下任一情况不合并：有 Critical / Important；问题计数为 0 但结论不是「可以合并」；有锁文件 / 构建产物未送审或 diff 被截断（评审覆盖不完整）；评审失败；评审期间有新推送（`--match-head-commit`）。
 - 草稿 PR 和来自 fork 的 PR 不评审、不合并。
+- 评审结论写在提交状态 **「AI 评审」** 上，和工作流本身的 ✅（只表示流程跑完了）分开：
+  - ⏳ pending：评审进行中
+  - ✅ success：没有 Critical / Important；因其他原因不能自动合并时（如改动了评审配置、作者不在白名单），描述里会写「需人工合并」和原因
+  - ❌ failure：有 Critical / Important、结论与计数不一致，或评审失败 / 达到次数上限
+  - ⚠️ error：本次评审被取消（有新提交或超时）
+- 评审说明文字的语言由 `AI_REVIEW_LANGUAGE` 决定（默认简体中文）；代码、路径、报错原文保持原样。
 
 ## 需要配置（Settings → Secrets and variables → Actions）
 
@@ -42,6 +48,7 @@ Variables：
 - `CLAUDE_REVIEW_MAX_BUDGET_USD`（可选）：单次评审的金额上限（美元），默认 `2`；超出即停止，本次按「评审失败、不合并」处理。只对 API Key 计费有意义
 - `AI_REVIEW_MAX_PER_DAY`（可选）：同一个 PR 24 小时内最多自动评审几次，默认 `10`；达到上限后不再调用模型，只提醒一次
 - `AUTO_MERGE_AUTHORS`（可选）：自动合并白名单，逗号分隔的 GitHub 用户名，默认只有仓库所有者；其他作者的 PR 只评审、不自动合并
+- `AI_REVIEW_LANGUAGE`（可选）：评审报告使用的语言，默认 `简体中文`
 - `AI_REVIEW_MAX_DIFF_BYTES`（可选）：送给模型的 diff 上限（字节），默认 `60000`，超出部分截断
 
 另外请确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
@@ -90,6 +97,8 @@ Variables：
 
 - Require a pull request before merging
 - Require review from Code Owners
+
+如果希望有阻塞问题的 PR 在合并按钮处就被拦住，可以再开启 Require status checks to pass，并把 **「AI 评审」** 加为必需检查（这个状态至少出现过一次后才能在列表里搜到）。注意：fork 来的 PR 和草稿 PR 不会产生这个状态，开启后它们需要管理员绕过才能合并。
 
 工作流本身也会拒绝自动合并改动这两个目录的 PR；在 `pull_request_target` 下这条规则取自 `main`，PR 删不掉它。
 
