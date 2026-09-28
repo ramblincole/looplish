@@ -125,7 +125,7 @@ jobs:
                     ':(exclude,glob)**/dist/**' ':(exclude,glob)**/build/**' ':(exclude,glob)**/vendor/**')
           if [ "$REVIEW_MODE" = "incremental" ]; then
             export REVIEW_MODE_LABEL="增量"
-            export INCREMENTAL_RULES="5. 这是增量评审：附件只包含上次评审后新增的提交（不含从 main 合并进来的改动）。逐条核对上次报告中的 Critical / Important 在当前 HEAD 上是否已修复，结果写进 followups；仍存在或部分修复的问题同时列入 findings。"
+            export INCREMENTAL_RULES="5. 这是增量评审：附件只包含上次评审后新增的提交（不含从 main 合并进来的改动）。逐条核对上次报告中的 Critical / Important 在当前 HEAD 上是否已修复，结果写进 followups；仍存在或部分修复的问题同时列入 findings。新问题只找本次新增提交引入的；没有改动的旧代码里的问题，除非是 critical，否则不要在增量评审中新提。"
             RANGE_FROM="$BEFORE"
             git log --no-merges -p --format='commit %H%n%s%n' "$BEFORE..$HEAD_SHA" -- . "${EXCLUDES[@]}" > "$WORK_DIR/changes.diff"
           else
@@ -540,6 +540,22 @@ jobs:
           subject: "[${{ github.repository }}] PR #${{ github.event.pull_request.number }} 已自动合并：${{ github.event.pull_request.title }}"
           convert_markdown: true
           html_body: file://${{ env.WORK_DIR }}/email.md
+
+      - name: Mark failed review
+        # 解析结论这一步自身出错时，上面的状态和评论步骤都会跳过；这里兜底，避免一直停在「评审进行中」
+        if: ${{ !cancelled() && steps.started.outputs.comment_id != '' && steps.verdict.outcome != 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          COMMENT_ID: ${{ steps.started.outputs.comment_id }}
+        run: |
+          set -euo pipefail
+          printf '<!-- ai-auto-review -->\n<!-- ai-auto-review-run -->\n❌ 本次 AI 评审（提交 `%s`）流程出错，未能生成报告，详见[运行日志](%s)。\n' \
+            "${HEAD_SHA:0:7}" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$WORK_DIR/failed.md"
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" -F body=@"$WORK_DIR/failed.md" --silent
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state=failure -f context="AI 评审" \
+            -f description="评审失败：流程出错，未能生成报告" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --silent
 
       - name: Mark cancelled review
         # 被新推送取消或超时时，把「评审进行中」占位评论改成已取消（保留 run 标记，限流仍计数）

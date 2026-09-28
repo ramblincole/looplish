@@ -30,32 +30,17 @@ SAFE_PATH = re.compile(r"^[A-Za-z0-9._/@+\-]+$")
 
 # 放进代码块的字段原样保留：代码块里的 HTML 实体不会被解析，转义反而会让修复代码无法照抄
 VERBATIM_FIELDS = {"suggested_code"}
-
-
-# 只把同一行内成对的反引号当作代码，开头和结尾都必须是完整的反引号串（前后不能再紧挨反引号），
-# 和 Markdown「n 个反引号开头只能由恰好 n 个反引号结束」一致。
-# 这个判断不必和 GitHub 的解析器完全一致：代码之外的正文会把反斜杠、反引号、[ 和 < 全部转义，
-# GitHub 看到的代码就只剩这里认定的这些，不会出现两边切分错位（例如链接目标里的反引号、
-# 跨行的代码）让 HTML 漏出去的情况。
-CODE_SPAN = re.compile(r"(?<![`\\])(`+)(?!`)[^\n]*?(?<!`)\1(?!`)")
+# 代码块语言名只允许这些字符：反引号围栏的语言名里一旦出现反引号，围栏就不成立，修复代码会被当正文渲染
+SAFE_LANG = re.compile(r"^[A-Za-z0-9_+#.\-]{1,30}$")
 
 
 def neutralize(text):
-    """代码之外的正文：转义反斜杠、反引号和 [（不能再开启代码、链接和图片），以及 <（不能写 HTML，
+    """模型写的文字一律按纯文本显示，不保留任何 Markdown / HTML 能力：
+    转义反斜杠、反引号和 [（不能开启代码、链接、图片），把 < 转成 &lt;（不能写 HTML，
     防止隐藏内容、伪造评审标记、<img> 外发请求）。
-    反引号包起来的代码原样保留，GitHub 不会渲染其中的 HTML 和图片。"""
-    out, pos = [], 0
-    for m in CODE_SPAN.finditer(text):
-        out.append(_neutralize_prose(text[pos:m.start()]))
-        out.append(m.group(0))
-        pos = m.end()
-    out.append(_neutralize_prose(text[pos:]))
-    # 图片语法无论在不在代码里都改掉：宁可代码片段里多一个反斜杠，也不留外发请求的口子
-    return "".join(out).replace("![", "!\\[")
-
-
-def _neutralize_prose(text):
-    # 先转义反斜杠：否则模型写的 \` 会变成 \\`，反引号又能开启代码
+    不去识别「哪段是代码」：只要识别，就有和 GitHub 解析器切分不一致、HTML 借此漏出的可能。
+    代价是行内代码显示为带反引号的普通文字；格式全部由本脚本生成。"""
+    # 先转义反斜杠：否则模型写的 \` 会变成 \\`，反引号又能生效
     for ch in ("\\", "`", "["):
         text = text.replace(ch, "\\" + ch)
     return text.replace("<", "&lt;")
@@ -92,8 +77,9 @@ def location(f, repo, sha, server):
     if start > 0:
         label += f":{start}" + (f"-{end}" if end > start else "")
     # 只给看起来正常的仓库内相对路径生成链接
+    # 其他路径按纯文本显示（已被 neutralize 转义），不再包反引号，免得和转义字符组合出新的代码配对
     if not SAFE_PATH.match(path) or ".." in path.split("/"):
-        return f"`{label}`"
+        return label
     url = f"{server}/{repo}/blob/{sha}/{quote(path)}"
     if start > 0:
         url += f"#L{start}" + (f"-L{end}" if end > start else "")
@@ -123,7 +109,8 @@ def render_finding(i, f, repo, sha, server):
     code = str(f.get("suggested_code") or "").rstrip()
     if code:
         fc = fence(code)
-        out += ["", f"{fc}{one_line(f.get('code_language')) or ''}", code, fc]
+        lang = one_line(f.get("code_language"))
+        out += ["", fc + (lang if SAFE_LANG.match(lang) else ""), code, fc]
     out.append("")
     return out
 
