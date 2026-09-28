@@ -1,4 +1,4 @@
-# 每当有 PR 想要合并到 main 时，由 OpenAI Codex 自动评审：
+# 每当有 PR 想要合并到 main 时，由 Claude Code 自动评审：
 # - 新建 / 重新打开 / 转为 Ready 的 PR：全量评审（main...HEAD）
 # - PR 有新提交（synchronize）：增量评审（只看新提交，并跟进上次评审的问题）
 # - 评审结论无 Critical 且无 Important：自动 squash 合并、删除 PR 分支，并给仓库所有者发送报告邮件
@@ -20,9 +20,10 @@ permissions:
   contents: write        # 合并 PR、删除分支
   pull-requests: write   # 发表评审评论
   issues: write
+  id-token: write        # claude-code-action 需要
 
 env:
-  # 放在工作区之外，Codex 只读运行时也不会把它当作仓库内容
+  # 放在工作区之外，不会被当作仓库内容
   WORK_DIR: ${{ github.workspace }}/../ai-review-work
   PR_NUMBER: ${{ github.event.pull_request.number }}
   GH_TOKEN: ${{ github.token }}
@@ -149,62 +150,25 @@ jobs:
             echo '````diff'; head -c "$MAX_DIFF_BYTES" "$WORK_DIR/changes.diff"; echo; echo '````'
           } > "$WORK_DIR/prompt.md"
           echo "Prompt size: $(wc -c < "$WORK_DIR/prompt.md") bytes (diff: $DIFF_BYTES bytes)"
+          DELIM="PROMPT_EOF_$(openssl rand -hex 16)"
+          { echo "text<<$DELIM"; cat "$WORK_DIR/prompt.md"; echo; echo "$DELIM"; } >> "$GITHUB_OUTPUT"
 
-      - name: Start Codex watchdog
-        run: |
-          # codex exec 有时写出最终结论后进程不退出，而对 action 步骤设置的 timeout-minutes 并不会结束它。
-          # 后台看门狗：结论文件成为完整 JSON 后结束 codex exec；最多等 19 分钟。
-          # 只结束进程，不改变 codex-action 的 Key 隔离代理和只读沙箱。
-          RESULT="$WORK_DIR/result.json"
-          rm -f "$RESULT"
-          nohup bash -c '
-            RESULT="$1"; deadline=$((SECONDS + 19 * 60))
-            # 正则写法保证它不会匹配到看门狗自己的命令行
-            PATTERN="codex(\.js)? exec --skip-git-repo-check"
-            stop_codex() { pgrep -f -- "$PATTERN" | grep -vx "$$" | xargs -r kill "-$1" 2>/dev/null || true; }
-            while [ "$SECONDS" -lt "$deadline" ]; do
-              if jq -e ".report" "$RESULT" >/dev/null 2>&1; then
-                echo "$(date -u +%T) 已拿到最终结论，结束 codex exec"
-                sleep 5; stop_codex TERM; sleep 5; stop_codex KILL
-                exit 0
-              fi
-              sleep 5
-            done
-            echo "$(date -u +%T) 超过 19 分钟，强制结束 codex exec"
-            stop_codex KILL
-          ' watchdog "$RESULT" > "$WORK_DIR/watchdog.log" 2>&1 &
-          echo "watchdog pid: $!"
-
-      - name: Run OpenAI Codex review
-        id: codex
+      - name: Run Claude Code review
+        id: claude
         timeout-minutes: 20
-        # 看门狗结束 codex exec 后本步会以失败结束；结论文件已写好，由下一步校验后照常使用，校验不过则不合并
+        # 失败或超时由下一步统一处理：拿不到有效结论就不合并
         continue-on-error: true
-        uses: openai/codex-action@v1
+        uses: anthropics/claude-code-action@v1
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: ${{ env.WORK_DIR }}/prompt.md
-          # 最终回复写到这里（由 action 写入，Codex 本身不写文件）
-          output-file: ${{ env.WORK_DIR }}/result.json
-          output-schema: |
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["critical", "important", "minor", "conclusion", "report"],
-              "properties": {
-                "critical": {"type": "integer", "minimum": 0},
-                "important": {"type": "integer", "minimum": 0},
-                "minor": {"type": "integer", "minimum": 0},
-                "conclusion": {"type": "string", "enum": ["可以合并", "建议修复后再看"]},
-                "report": {"type": "string"}
-              }
-            }
-          # 为空时使用 Codex 默认模型；推理强度默认 medium 以控制成本
-          model: ${{ vars.OPENAI_REVIEW_MODEL }}
-          effort: ${{ vars.OPENAI_REVIEW_EFFORT || 'medium' }}
-          # 只读：Codex 只能读仓库，不能创建或修改任何文件
-          permission-profile: ":read-only"
-          safety-strategy: drop-sudo
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          prompt: ${{ steps.prompt.outputs.text }}
+          # 只读工具 + git 查询命令；结论按 --json-schema 通过 structured_output 输出，Claude 不写任何文件
+          claude_args: >-
+            --model ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-opus-5' }}
+            --max-turns ${{ vars.CLAUDE_REVIEW_MAX_TURNS || '30' }}
+            --allowedTools "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*)"
+            --json-schema '{"type":"object","additionalProperties":false,"required":["critical","important","minor","conclusion","report"],"properties":{"critical":{"type":"integer","minimum":0},"important":{"type":"integer","minimum":0},"minor":{"type":"integer","minimum":0},"conclusion":{"type":"string","enum":["可以合并","建议修复后再看"]},"report":{"type":"string"}}}'
 
       - name: Parse verdict
         id: verdict
@@ -212,13 +176,14 @@ jobs:
         env:
           COMPLETE: ${{ steps.prompt.outputs.complete }}
           COVERAGE_NOTE: ${{ steps.prompt.outputs.coverage_note }}
+          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
         run: |
           set -euo pipefail
-          cat "$WORK_DIR/watchdog.log" 2>/dev/null || true
           RESULT="$WORK_DIR/result.json"
+          printf '%s' "$STRUCTURED_OUTPUT" > "$RESULT"
           # 结果缺失或格式不对都视为不可合并（fail-safe）
           if ! jq -e '(.critical|type=="number") and (.important|type=="number") and (.report|type=="string" and length>0)' "$RESULT" >/dev/null 2>&1; then
-            echo "::error::Codex 没有输出有效的评审结果"
+            echo "::error::Claude Code 没有输出有效的评审结果"
             echo "critical=-1" >> "$GITHUB_OUTPUT"
             echo "important=-1" >> "$GITHUB_OUTPUT"
             echo "mergeable=false" >> "$GITHUB_OUTPUT"
@@ -277,7 +242,7 @@ jobs:
             fi
             echo "_评审模式：${REVIEW_MODE}，提交：\`${HEAD_SHA:0:7}\`，[运行日志]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)_"
             echo
-            echo "_由 OpenAI Codex 自动评审生成_"
+            echo "_由 Claude Code 自动评审生成_"
           } > "$BODY"
           gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY"
 

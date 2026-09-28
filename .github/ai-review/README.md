@@ -1,10 +1,10 @@
-# OpenAI Codex 自动 PR 评审
+# Claude Code 自动 PR 评审
 
 工作流：`.github/workflows/ai-pr-review.yml`，评审提示词：`.github/ai-review/prompt.md`。
-评审 agent 为 [openai/codex-action](https://github.com/openai/codex-action)（Codex CLI），以 `:read-only` 权限运行：
-不能创建或修改任何文件，评审结果只通过按 JSON schema 约束的最终回复输出，由工作流发到 PR 评论。
+评审 agent 为 [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action)（Claude Code），只开放只读工具（Read / Glob / Grep 和 `git diff/log/show/blame`）：
+不能创建或修改任何文件，结论通过 `--json-schema` 约束的 `structured_output` 输出，由工作流发到 PR 评论。
 
-- 超时：`codex exec` 有时写出最终结论后进程不退出，而 GitHub 对 action 步骤设置的 `timeout-minutes` 也结束不了它。所以在 Codex 步骤之前会启动一个后台看门狗：结论文件一成为完整的 JSON，就结束 `codex exec`；最多等 19 分钟。它只结束进程，不改变 codex-action 的 Key 隔离代理和只读沙箱。整个任务最多 30 分钟。
+- 超时：Claude Code 评审一步最多 20 分钟、最多 30 轮工具调用（`CLAUDE_REVIEW_MAX_TURNS`），整个任务最多 30 分钟；超时或失败都按「评审失败、不合并」处理。
 - 提示词模板从目标分支（`main`）读取，PR 改模板影响不到自己的评审。例外：模板首次引入（`main` 上还没有）时只能读取 PR 自带的版本。
 - 增量评审只采信 GitHub Actions 机器人发的、评审成功的上一次评论，并从它记录的提交开始评审（被取消或失败的评审不算）。
 
@@ -24,14 +24,14 @@
 ## 需要配置（Settings → Secrets and variables → Actions）
 
 Secrets：
-- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
 - （可选，不配置则不发邮件）`SMTP_SERVER`、`SMTP_PORT`（默认 465，走 SSL；587 走 STARTTLS）、`SMTP_USERNAME`、`SMTP_PASSWORD`
   - Gmail 示例：`smtp.gmail.com` / `465` / 你的 Gmail 地址 / 应用专用密码
 
 Variables：
 - `REVIEW_REPORT_EMAIL`：报告收件人；未设置时使用仓库所有者 GitHub 资料里公开的邮箱
-- `OPENAI_REVIEW_MODEL`（可选）：评审使用的 OpenAI 模型，不设置时使用 Codex 默认模型
-- `OPENAI_REVIEW_EFFORT`（可选）：推理强度，默认 `medium`
+- `CLAUDE_REVIEW_MODEL`（可选）：评审使用的模型，默认 `claude-opus-5`
+- `CLAUDE_REVIEW_MAX_TURNS`（可选）：最多工具调用轮数，默认 `30`
 - `AI_REVIEW_MAX_DIFF_BYTES`（可选）：送给模型的 diff 上限（字节），默认 `60000`，超出部分截断
 
 另外请确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
@@ -39,7 +39,7 @@ Variables：
 
 ## 成本控制
 
-- diff 由工作流预先生成并直接放进提示词，Codex 不用多轮调用工具去拉取改动；只在需要核实上下文时读文件。
+- diff 由工作流预先生成并直接放进提示词，Claude 不用多轮调用工具去拉取改动；只在需要核实上下文时读文件。
 - 锁文件、`*.min.*`、`*.map`、`dist/`、`build/`、`vendor/` 不送给模型；diff 超过上限会截断，并附文件列表。
 - 有新提交时只做增量评审；同一 PR 的新推送会取消还在运行的旧评审。
-- 推理强度默认 `medium`。想再省可以把 `OPENAI_REVIEW_MODEL` 换成更便宜的模型，或把 `OPENAI_REVIEW_EFFORT` 设为 `low`（漏报风险会上升）。
+- 想再省可以把 `CLAUDE_REVIEW_MODEL` 换成 `claude-sonnet-5`（约为 Opus 5 价格的 40%），或调低 `CLAUDE_REVIEW_MAX_TURNS`（漏报风险会上升）。
