@@ -131,22 +131,34 @@ def test_empty_result_renders_valid_empty_documents() -> None:
     assert render_srt(()) == ""
     assert render_vtt(()) == "WEBVTT\n\n"
     assert render_text(()) == ""
-    assert render_anki(()) == ""
+    assert render_anki((), JOB_ID) == ""
 
 
-def test_anki_references_one_based_clip_name() -> None:
-    assert render_anki(result().sentences) == "[sound:000001.mp3]\tHello, world!\r\n"
+def test_anki_references_job_prefixed_one_based_clip_name() -> None:
+    assert render_anki(result().sentences, JOB_ID) == (
+        "[sound:01JABCDEF123_000001.mp3]\tHello, world!\r\n"
+    )
+
+
+def test_anki_media_names_differ_between_jobs() -> None:
+    # Anki 媒体库全局共享，两个任务的同一句切片必须不同名。
+    first = render_anki(result().sentences, "01JAAAAAAAAA")
+    second = render_anki(result().sentences, "01JBBBBBBBBB")
+
+    assert first != second
+    assert "[sound:01JAAAAAAAAA_000001.mp3]" in first
+    assert "[sound:01JBBBBBBBBB_000001.mp3]" in second
 
 
 def test_anki_round_trips_tabs_quotes_newlines_and_unicode() -> None:
     tricky = 'Tab\there, "quoted", new\nline, café 你好'
-    rendered = render_anki(result(second_sentence(tricky)).sentences)
+    rendered = render_anki(result(second_sentence(tricky)).sentences, JOB_ID)
 
     rows = list(csv.reader(io.StringIO(rendered, newline=""), dialect="excel-tab"))
 
     assert rows == [
-        ["[sound:000001.mp3]", "Hello, world!"],
-        ["[sound:000002.mp3]", tricky],
+        ["[sound:01JABCDEF123_000001.mp3]", "Hello, world!"],
+        ["[sound:01JABCDEF123_000002.mp3]", tricky],
     ]
 
 
@@ -159,7 +171,7 @@ def test_write_text_artifacts_writes_utf8_files(tmp_path: Path) -> None:
     assert (job_dir / "subtitles.srt").read_text(encoding="utf-8") == render_srt(job.sentences)
     assert (job_dir / "subtitles.vtt").read_text(encoding="utf-8") == render_vtt(job.sentences)
     assert (job_dir / "sentences.txt").read_text(encoding="utf-8") == render_text(job.sentences)
-    assert (job_dir / "anki_import.tsv").read_bytes() == render_anki(job.sentences).encode()
+    assert (job_dir / "anki_import.tsv").read_bytes() == render_anki(job.sentences, JOB_ID).encode()
     assert not list(job_dir.glob(".*"))
 
 
@@ -215,12 +227,12 @@ def test_bundle_contains_only_fixed_paths(tmp_path: Path) -> None:
     with zipfile.ZipFile(bundle) as archive:
         names = sorted(archive.namelist())
         assert archive.read("subtitles.srt").decode() == render_srt(job.sentences)
-        assert archive.read("clips/000002.mp3") == b"clip 2.500 1.500"
+        assert archive.read("clips/01JABCDEF123_000002.mp3") == b"clip 2.500 1.500"
     assert names == [
         "README.txt",
         "anki_import.tsv",
-        "clips/000001.mp3",
-        "clips/000002.mp3",
+        "clips/01JABCDEF123_000001.mp3",
+        "clips/01JABCDEF123_000002.mp3",
         "sentences.txt",
         "subtitles.srt",
         "subtitles.vtt",
@@ -261,7 +273,7 @@ def test_bundle_ignores_stray_files_in_clips_directory(tmp_path: Path) -> None:
 
     with zipfile.ZipFile(bundle) as archive:
         assert [name for name in archive.namelist() if name.startswith("clips/")] == [
-            "clips/000001.mp3"
+            "clips/01JABCDEF123_000001.mp3"
         ]
 
 
@@ -292,3 +304,18 @@ def test_failed_bundle_keeps_previous_bundle(
 
     assert bundle.read_bytes() == previous
     assert not [path for path in (tmp_path / JOB_ID).iterdir() if path.name.startswith(".")]
+
+
+def test_bundle_clip_names_match_anki_references(tmp_path: Path) -> None:
+    bundle = exporter(tmp_path).build_bundle(result(second_sentence()))
+
+    with zipfile.ZipFile(bundle) as archive:
+        clips = {
+            name.removeprefix("clips/") for name in archive.namelist() if name.startswith("clips/")
+        }
+        rows = csv.reader(
+            io.StringIO(archive.read("anki_import.tsv").decode(), newline=""), dialect="excel-tab"
+        )
+        referenced = {row[0].removeprefix("[sound:").removesuffix("]") for row in rows}
+
+    assert referenced == clips

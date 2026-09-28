@@ -22,12 +22,18 @@ README = (
     "subtitles.srt/vtt: speech boundaries\n"
     "clips: padded practice audio\n"
     "anki_import.tsv: import with media files from clips/\n"
+    "clip names start with the job id, so clips from different exports never collide in Anki\n"
 )
 
 
 def clip_name(index: int) -> str:
     # API 的句子索引从 0 开始，文件名从 000001 开始。
     return f"{index + 1:06}.mp3"
+
+
+def anki_media_name(job_id: str, index: int) -> str:
+    # Anki 媒体库是全局平铺目录，带任务 ID 前缀，不同任务导出的切片导入后不会互相覆盖。
+    return f"{job_id}_{clip_name(index)}"
 
 
 def _timestamp(seconds: float, separator: str) -> str:
@@ -76,13 +82,13 @@ def render_text(sentences: tuple[Sentence, ...]) -> str:
     return "".join(f"{_one_line(sentence.text)}\n" for sentence in sentences)
 
 
-def render_anki(sentences: tuple[Sentence, ...]) -> str:
+def render_anki(sentences: tuple[Sentence, ...], job_id: str) -> str:
     output = io.StringIO(newline="")
     writer = csv.writer(
         output, dialect="excel-tab", lineterminator="\r\n", quoting=csv.QUOTE_MINIMAL
     )
     for sentence in sentences:
-        writer.writerow([f"[sound:{clip_name(sentence.index)}]", sentence.text])
+        writer.writerow([f"[sound:{anki_media_name(job_id, sentence.index)}]", sentence.text])
     return output.getvalue()
 
 
@@ -112,7 +118,7 @@ class ArtifactExporter:
             "subtitles.srt": render_srt(result.sentences),
             "subtitles.vtt": render_vtt(result.sentences),
             "sentences.txt": render_text(result.sentences),
-            "anki_import.tsv": render_anki(result.sentences),
+            "anki_import.tsv": render_anki(result.sentences, result.job_id),
         }
         for name, value in values.items():
             target = self.store.artifact_path(result.job_id, name)
@@ -150,9 +156,10 @@ class ArtifactExporter:
                 for name in TEXT_ARTIFACTS:
                     archive.write(self.store.artifact_path(result.job_id, name), arcname=name)
                 archive.writestr("README.txt", README)
-                # 归档名只来自句子序号，不扫描目录，旧切片和临时文件都不会混进来。
+                # 归档名只来自任务 ID 和句子序号，不扫描目录，旧切片和临时文件都不会混进来；
+                # 与 anki_import.tsv 中的引用一致。
                 for index, clip in enumerate(clips):
-                    archive.write(clip, arcname=f"clips/{clip_name(index)}")
+                    archive.write(clip, arcname=f"clips/{anki_media_name(result.job_id, index)}")
             os.replace(temporary, target)
         finally:
             # 写包或替换失败时清理临时文件，旧的正式 bundle 仍保持可读。
