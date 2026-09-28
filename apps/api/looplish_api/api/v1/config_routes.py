@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 
 from looplish_api.api.dependencies import ContainerDep
-from looplish_api.api.schemas import ConfigDefaultsResponse, ConfigResponse
+from looplish_api.api.schemas import PROBLEM_RESPONSES, ConfigDefaultsResponse, ConfigResponse
 
-router = APIRouter(prefix="/api/v1", tags=["config"])
+router = APIRouter(prefix="/api/v1", tags=["config"], responses=PROBLEM_RESPONSES)
 
 
 @router.get("/config", response_model=ConfigResponse)

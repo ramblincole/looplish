@@ -251,3 +251,10 @@ class ConfigResponse(ApiModel):
     # 前端据此决定是否显示「本机文件路径」输入。
     allowLocalPaths: bool
     defaults: ConfigDefaultsResponse
+
+
+# 所有 4xx/5xx 都以 Problem Details 返回；路由据此把错误结构写进 OpenAPI 契约。
+PROBLEM_RESPONSES: dict[int | str, dict[str, object]] = {
+    "4XX": {"model": ProblemDetails, "description": "Problem Details"},
+    "5XX": {"model": ProblemDetails, "description": "Problem Details"},
+}
