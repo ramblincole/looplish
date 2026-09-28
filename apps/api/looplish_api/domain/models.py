@@ -6,6 +6,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Self, TypedDict, Unpack
 
+# 词时间可比媒体时长多出的秒数，吸收转码和探测时长之间的舍入误差。
+TIMELINE_TOLERANCE = 0.001
+
 
 class JobStatus(StrEnum):
     QUEUED = "queued"
@@ -65,7 +68,7 @@ class Transcript:
         for word in self.words:
             if word.start < previous:
                 raise ValueError("word timeline must be monotonic")
-            if word.end > self.duration + 0.001:
+            if word.end > self.duration + TIMELINE_TOLERANCE:
                 raise ValueError("word exceeds transcript duration")
             previous = word.start
 
