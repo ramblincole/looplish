@@ -26,7 +26,7 @@
 ## 需要配置（Settings → Secrets and variables → Actions）
 
 Secrets：
-- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_API_KEY` 或 `CLAUDE_CODE_OAUTH_TOKEN`（二选一，见下方「使用 Claude 官方模型」）
 - （可选，不配置则不发邮件）`SMTP_SERVER`、`SMTP_PORT`（默认 465，走 SSL；587 走 STARTTLS）、`SMTP_USERNAME`、`SMTP_PASSWORD`
   - Gmail 示例：`smtp.gmail.com` / `465` / 你的 Gmail 地址 / 应用专用密码
 
@@ -70,3 +70,16 @@ Variables：
 - Require review from Code Owners
 
 工作流本身也会拒绝自动合并改动这两个目录的 PR；在 `pull_request_target` 下这条规则取自 `main`，PR 删不掉它。
+
+## 使用 Claude 官方模型
+
+两种凭据二选一：
+
+| 方式 | Secret | 怎么获取 | 计费 |
+| --- | --- | --- | --- |
+| Claude 订阅（Pro / Max） | `CLAUDE_CODE_OAUTH_TOKEN` | 本机装好 Claude Code 并登录订阅账号后，运行 `claude setup-token`，复制输出的 token | 计入订阅额度，与本机使用共享用量上限 |
+| API Key | `ANTHROPIC_API_KEY` | 在 https://console.anthropic.com → API Keys 创建（需单独充值） | 按 token 付费，与订阅无关 |
+
+- 只配其中一个。两个都配时，预检按 API Key 进行，Claude Code 实际用哪一个取决于它自身的优先级，容易混淆。
+- 删掉 Variable `ANTHROPIC_BASE_URL`；`CLAUDE_REVIEW_MODEL` 删掉（默认 `claude-opus-5`）或填 Claude 模型名，如 `claude-sonnet-5`。
+- 使用订阅 token 时不做接口预检（该 token 只供 Claude Code 使用）；token 失效时评审会失败，重新运行 `claude setup-token` 更新 Secret 即可。
