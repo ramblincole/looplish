@@ -44,6 +44,8 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+# 注释与文案使用中文全角标点，不视为易混淆字符。
+allowed-confusables = ["，", "；", "：", "（", "）", "！", "？"]
 
 [tool.mypy]
 python_version = "3.13"
