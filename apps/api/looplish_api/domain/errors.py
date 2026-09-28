@@ -44,3 +44,18 @@ class SourceNotSupported(DomainError):
 class ProcessingFailure(DomainError):
     def __init__(self, code: str, detail: str, status: int = 422) -> None:
         super().__init__(code, detail, status)
+
+
+class QueueFull(DomainError):
+    def __init__(self) -> None:
+        super().__init__("QUEUE_FULL", "任务队列已满，请稍后再试。", 503)
+
+
+class ServiceStopping(DomainError):
+    def __init__(self) -> None:
+        super().__init__("SERVICE_STOPPING", "服务正在停止，暂不接收新任务。", 503)
+
+
+class UploadTooLarge(DomainError):
+    def __init__(self) -> None:
+        super().__init__("UPLOAD_TOO_LARGE", "上传文件超过大小上限。", 413)
