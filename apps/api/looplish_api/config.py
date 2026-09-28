@@ -15,6 +15,8 @@ class Settings(BaseSettings):
         env_prefix="LOOPLISH_",
         env_file=".env",
         env_file_encoding="utf-8",
+        # .env.example 中留空的项表示「使用默认值」，不能用空字符串覆盖默认路径和密钥。
+        env_ignore_empty=True,
         extra="ignore",
         frozen=True,
     )
@@ -59,7 +61,8 @@ class Settings(BaseSettings):
         # 启动时一次性验证后端和派生切句参数，避免任务运行到中途才失败。
         if self.asr_backend not in {"local", "openai", "groq", "fake"}:
             raise ValueError(f"unknown ASR backend: {self.asr_backend}")
-        if self.asr_backend in {"openai", "groq"} and self.asr_api_key is None:
+        has_key = self.asr_api_key is not None and self.asr_api_key.get_secret_value().strip()
+        if self.asr_backend in {"openai", "groq"} and not has_key:
             raise ValueError("cloud ASR backend requires an API key")
         self.segmentation()
         return self
@@ -80,7 +83,8 @@ class Settings(BaseSettings):
         return JobOptions(
             asr_backend=self.asr_backend,
             asr_model=self.asr_model,
-            language=self.language or None,
+            # 环境变量留空会回落到默认值，因此用显式的 auto 表示自动检测语言。
+            language=None if self.language.strip() in {"", "auto"} else self.language,
             subtitle_source=self.subtitle_source,
             subtitle_languages=languages,
             make_clips=False,

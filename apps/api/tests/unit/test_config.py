@@ -7,6 +7,8 @@ from pydantic import ValidationError
 from looplish_api.config import Settings
 from looplish_api.domain.models import SegmentationOptions, SubtitleSource
 
+ENV_EXAMPLE = Path(__file__).resolve().parents[4] / ".env.example"
+
 
 @pytest.fixture(autouse=True)
 def isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -34,6 +36,41 @@ def test_unknown_backend_is_rejected(tmp_path: Path) -> None:
 def test_cloud_backend_requires_key(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="API key"):
         Settings(_env_file=None, data_dir=tmp_path / "jobs", asr_backend="openai")
+
+
+def test_cloud_backend_rejects_blank_key(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="API key"):
+        Settings(_env_file=None, data_dir=tmp_path / "jobs", asr_backend="openai", asr_api_key="  ")
+
+
+def test_env_example_blank_values_keep_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 直接复制 .env.example 作为 .env 时，留空的项必须回落到默认值。
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(ENV_EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    defaults = Settings(_env_file=None)
+
+    settings = Settings.from_environment()
+
+    assert settings.data_dir == defaults.data_dir
+    assert settings.models_dir == defaults.models_dir
+    assert settings.log_dir == defaults.log_dir
+    assert settings.web_dist_dir is None
+    assert settings.ffmpeg_path == defaults.ffmpeg_path
+    assert settings.ffprobe_path == defaults.ffprobe_path
+    assert settings.asr_api_key is None
+    assert settings.asr_base_url is None
+    assert settings.asr_api_model is None
+
+
+def test_blank_api_key_in_env_does_not_satisfy_cloud_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOOPLISH_ASR_BACKEND", "openai")
+    monkeypatch.setenv("LOOPLISH_ASR_API_KEY", "")
+    with pytest.raises(ValueError, match="API key"):
+        Settings(_env_file=None, data_dir=tmp_path / "jobs")
 
 
 def test_secret_is_not_in_repr(tmp_path: Path) -> None:
@@ -97,6 +134,13 @@ def test_default_job_options_snapshot(tmp_path: Path) -> None:
 
 def test_empty_language_means_auto_detect(tmp_path: Path) -> None:
     settings = Settings(_env_file=None, data_dir=tmp_path / "jobs", language="")
+
+    assert settings.default_job_options().language is None
+
+
+def test_auto_language_means_auto_detect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOOPLISH_LANGUAGE", "auto")
+    settings = Settings(_env_file=None, data_dir=tmp_path / "jobs")
 
     assert settings.default_job_options().language is None
 
