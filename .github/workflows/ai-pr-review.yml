@@ -159,6 +159,13 @@ jobs:
         # 失败或超时由下一步统一处理：拿不到有效结论就不合并
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
+        env:
+          # 留空 = Anthropic 官方接口；改用 DeepSeek 等兼容 Anthropic 的接口时填其地址
+          ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
+          # Claude Code 后台任务会用到其他档位的模型，第三方接口下统一指向同一个模型
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}

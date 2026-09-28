@@ -43,3 +43,17 @@ Variables：
 - 锁文件、`*.min.*`、`*.map`、`dist/`、`build/`、`vendor/` 不送给模型；diff 超过上限会截断，并附文件列表。
 - 有新提交时只做增量评审；同一 PR 的新推送会取消还在运行的旧评审。
 - 想再省可以把 `CLAUDE_REVIEW_MODEL` 换成 `claude-sonnet-5`（约为 Opus 5 价格的 40%），或调低 `CLAUDE_REVIEW_MAX_TURNS`（漏报风险会上升）。
+
+## 改用 DeepSeek（或其他兼容 Anthropic 接口的模型）
+
+评审仍由 Claude Code（`claude-code-action`）执行，只把模型请求转到第三方接口：
+
+| 类型 | 名称 | 值 |
+| --- | --- | --- |
+| Secret | `ANTHROPIC_API_KEY` | DeepSeek 的 API Key |
+| Variable | `ANTHROPIC_BASE_URL` | DeepSeek 兼容 Anthropic 的接口地址，以 DeepSeek 官方文档为准 |
+| Variable | `CLAUDE_REVIEW_MODEL` | DeepSeek 的模型名，以 DeepSeek 官方文档为准；**必须设置**，否则会用默认的 `claude-opus-5`，第三方接口不认 |
+
+- 三个 `ANTHROPIC_DEFAULT_*_MODEL` 会自动指向 `CLAUDE_REVIEW_MODEL`，Claude Code 的后台请求也走同一个模型。
+- 结论依赖模型稳定地调用工具、按 JSON schema 输出；第三方模型做不到时，这一轮按「评审失败、不合并」处理，不会误合并。
+- 切回 Anthropic 官方：删掉 `ANTHROPIC_BASE_URL`，把 `CLAUDE_REVIEW_MODEL` 改回 Claude 模型（或删掉，使用默认值），Secret 换回 Anthropic 的 Key。
