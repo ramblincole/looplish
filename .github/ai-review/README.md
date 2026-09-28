@@ -5,7 +5,9 @@
 不能创建或修改任何文件，结论通过 `--json-schema` 约束的 `structured_output` 输出，由工作流发到 PR 评论。
 
 - 超时：Claude Code 评审一步最多 20 分钟、最多 30 轮工具调用（`CLAUDE_REVIEW_MAX_TURNS`），整个任务最多 30 分钟；超时或失败都按「评审失败、不合并」处理。
-- 提示词模板从目标分支（`main`）读取，PR 改模板影响不到自己的评审。例外：模板首次引入（`main` 上还没有）时只能读取 PR 自带的版本。
+- 触发方式是 `pull_request_target`：运行的始终是 `main` 上的工作流和提示词模板，PR 改不了自己的评审规则；PR 的代码只作为数据读取，从不执行。
+  - 因此修改工作流或提示词的 PR，要**合并进 `main` 之后**才生效；引入本工作流的第一个 PR 不会被自己评审。
+- 检出代码时不保存凭据（`persist-credentials: false`），评审报告中出现疑似 token / API key 时整份作废、不发到公开评论。
 - 增量评审只采信 GitHub Actions 机器人发的、评审成功的上一次评论，并从它记录的提交开始评审（被取消或失败的评审不算）。
 
 ## 行为
@@ -62,4 +64,9 @@ Variables：
 
 ## 建议的分支保护
 
-工作流里的「改动 CI / 评审规则就不自动合并」只能挡住无意的改动：`pull_request` 事件运行的是 PR 里的工作流文件，恶意 PR 可以连这条检查一起删掉。请在 `main` 的分支保护里为 `.github/workflows/**` 和 `.github/ai-review/**` 配置 CODEOWNERS，并开启「Require review from Code Owners」。
+仓库已提交 `.github/CODEOWNERS`，把 `.github/workflows/`、`.github/ai-review/` 交给仓库所有者审批。要让它生效，还需要在 Settings → Branches → `main` 的分支保护规则里开启：
+
+- Require a pull request before merging
+- Require review from Code Owners
+
+工作流本身也会拒绝自动合并改动这两个目录的 PR；在 `pull_request_target` 下这条规则取自 `main`，PR 删不掉它。
