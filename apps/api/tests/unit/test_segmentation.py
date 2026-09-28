@@ -3,7 +3,7 @@ from collections.abc import Sequence
 
 import pytest
 
-from looplish_api.domain.models import SegmentationOptions, Sentence, Word
+from looplish_api.domain.models import SegmentationOptions, Sentence, Transcript, Word
 from looplish_api.domain.segmentation import build_sentences
 
 
@@ -340,11 +340,28 @@ def test_long_group_is_not_split_between_overlapping_words() -> None:
         assert sentence.words[0].text != " w6"
 
 
+def test_accepts_any_valid_transcript_within_duration_tolerance() -> None:
+    # Transcript 允许末词在容差内越过时长，切句必须接受同一份数据。
+    transcript = Transcript(
+        words=words((8.0, 9.0, " Almost"), (9.1, 10.0005, " done.")),
+        language="en",
+        duration=10.0,
+        source="asr",
+    )
+
+    result = build_sentences(transcript.words, transcript.duration, SegmentationOptions())
+
+    assert texts(result) == ["Almost done."]
+    assert result[-1].speech_end == 10.0005
+    assert result[-1].end == 10.0005
+
+
 @pytest.mark.parametrize(
     ("source", "duration", "message"),
     [
         (words((0.0, 0.5, " Hi.")), 0.0, "media_duration"),
         (words((0.0, 2.5, " Hi.")), 2.0, "exceeds media duration"),
+        (words((0.0, 2.002, " Hi.")), 2.0, "exceeds media duration"),
         (words((1.0, 1.5, " Hi."), (0.5, 0.8, " There.")), 2.0, "monotonic"),
     ],
 )

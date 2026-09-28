@@ -4,7 +4,7 @@ import re
 from collections.abc import Sequence
 from itertools import pairwise
 
-from looplish_api.domain.models import SegmentationOptions, Sentence, Word
+from looplish_api.domain.models import TIMELINE_TOLERANCE, SegmentationOptions, Sentence, Word
 
 TERMINAL = re.compile(r"[?!。！？]$|(?<!\.)\.$")
 CLAUSE = re.compile(r"[,;:，；：]$")
@@ -150,7 +150,8 @@ def _sentences(
         speech_start = group[0].start
         speech_end = group[-1].end
         start = max(0.0, speech_start - options.lead_pad)
-        end = min(media_duration, speech_end + options.tail_pad)
+        # 末词在容差内越过媒体时长时，切片至少要包住语音本身。
+        end = min(max(media_duration, speech_end), speech_end + options.tail_pad)
         # 相邻两句最多各占中间静音的一半；两侧共用同一个中点，浮点误差也不会造成重叠。
         if index > 0:
             start = max(start, (groups[index - 1][-1].end + speech_start) / 2)
@@ -180,7 +181,7 @@ def build_sentences(
         return ()
     if media_duration <= 0:
         raise ValueError("media_duration must be positive")
-    if any(word.end > media_duration for word in cleaned):
+    if any(word.end > media_duration + TIMELINE_TOLERANCE for word in cleaned):
         raise ValueError("word exceeds media duration")
     for previous, current in pairwise(cleaned):
         if current.start < previous.start:
