@@ -32,18 +32,17 @@ SAFE_PATH = re.compile(r"^[A-Za-z0-9._/@+\-]+$")
 VERBATIM_FIELDS = {"suggested_code"}
 
 
-# 只把同一行内成对的反引号当作代码：跨行（尤其跨空行、跨列表等块边界）时，
-# GitHub 可能不把它当代码，里面的 HTML 会被渲染。前面带反斜杠的反引号不开启代码。
-# 开头和结尾都必须是完整的反引号串（前后不能再紧挨反引号）：Markdown 里 n 个反引号开头的代码
-# 只能由恰好 n 个反引号结束，`<img>`` 这种长度不配对的写法不是代码，里面的 HTML 会被渲染。
+# 只把同一行内成对的反引号当作代码，开头和结尾都必须是完整的反引号串（前后不能再紧挨反引号），
+# 和 Markdown「n 个反引号开头只能由恰好 n 个反引号结束」一致。
+# 这个判断不必和 GitHub 的解析器完全一致：代码之外的正文会把反斜杠、反引号、[ 和 < 全部转义，
+# GitHub 看到的代码就只剩这里认定的这些，不会出现两边切分错位（例如链接目标里的反引号、
+# 跨行的代码）让 HTML 漏出去的情况。
 CODE_SPAN = re.compile(r"(?<![`\\])(`+)(?!`)[^\n]*?(?<!`)\1(?!`)")
-# 类 HTML 的写法：标签、注释、<!DOCTYPE>、<?...?>；R<T>、a < b 这类不受影响
-TAG_LIKE = re.compile(r"<(?=[A-Za-z/!?])")
 
 
 def neutralize(text):
-    """代码之外的正文：转义类 HTML 标签（防止隐藏内容、伪造评审标记、<img> 外发请求），
-    并把图片语法改成普通文本（防止评论被渲染时向外部地址发请求，把数据带出去）。
+    """代码之外的正文：转义反斜杠、反引号和 [（不能再开启代码、链接和图片），以及 <（不能写 HTML，
+    防止隐藏内容、伪造评审标记、<img> 外发请求）。
     反引号包起来的代码原样保留，GitHub 不会渲染其中的 HTML 和图片。"""
     out, pos = [], 0
     for m in CODE_SPAN.finditer(text):
@@ -56,7 +55,10 @@ def neutralize(text):
 
 
 def _neutralize_prose(text):
-    return TAG_LIKE.sub("&lt;", text)
+    # 先转义反斜杠：否则模型写的 \` 会变成 \\`，反引号又能开启代码
+    for ch in ("\\", "`", "["):
+        text = text.replace(ch, "\\" + ch)
+    return text.replace("<", "&lt;")
 
 
 def sanitize(value):
