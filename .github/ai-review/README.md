@@ -34,6 +34,7 @@ Variables：
 - `REVIEW_REPORT_EMAIL`：报告收件人；未设置时使用仓库所有者 GitHub 资料里公开的邮箱
 - `CLAUDE_REVIEW_MODEL`（可选）：评审使用的模型，默认 `claude-opus-5`
 - `CLAUDE_REVIEW_MAX_TURNS`（可选）：最多工具调用轮数，默认 `30`
+- `CLAUDE_REVIEW_EFFORT`（可选）：推理强度 `low` / `medium` / `high` / `xhigh` / `max`；不设置时用模型自身的默认值（Opus 5.5 为 `medium`，其他多数模型为 `high`）
 - `AI_REVIEW_MAX_DIFF_BYTES`（可选）：送给模型的 diff 上限（字节），默认 `60000`，超出部分截断
 
 另外请确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
