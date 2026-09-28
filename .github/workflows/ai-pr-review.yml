@@ -202,8 +202,10 @@ jobs:
         uses: anthropics/claude-code-action@v1
         env:
           # 留空 = Anthropic 官方接口；改用 DeepSeek 等兼容 Anthropic 的接口时填其地址
-          ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
-          # Claude Code 后台任务会用到其他档位的模型，第三方接口下统一指向同一个模型
+          # 与预检步骤取值一致
+          ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' }}
+          # Claude Code 后台任务会用到其他档位的模型，第三方接口下统一指向同一个模型；
+          # 未设置时为空串，与 claude-code-action 自身的默认值相同，Claude Code 使用内置默认模型
           ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
           ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
           ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
