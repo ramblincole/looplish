@@ -1,3 +1,4 @@
+import codecs
 from itertools import pairwise
 from pathlib import Path
 
@@ -111,7 +112,8 @@ def test_parses_vtt_with_omitted_hours_settings_and_notes(tmp_path: Path) -> Non
 
 def test_multiline_cue_and_crlf_are_joined(tmp_path: Path) -> None:
     path = tmp_path / "a.srt"
-    path.write_bytes("﻿1\r\n00:00:01,000 --> 00:00:03,000\r\nfirst\r\nsecond\r\n".encode())
+    # 文件以 UTF-8 BOM 开头；用 codecs 常量写出，源码里不出现不可见字符。
+    path.write_bytes(codecs.BOM_UTF8 + b"1\r\n00:00:01,000 --> 00:00:03,000\r\nfirst\r\nsecond\r\n")
 
     assert [word.text for word in parse_subtitle(path, 5.0).words] == [" first", " second"]
 
