@@ -1,0 +1,17 @@
+{
+  "name": "@looplish/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/generated.ts"
+  },
+  "scripts": {
+    "generate": "openapi-typescript openapi.json -o src/generated.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.9.1",
+    "typescript": "^5.9.2"
+  }
+}
