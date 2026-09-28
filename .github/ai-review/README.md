@@ -39,10 +39,27 @@ Variables：
 - `CLAUDE_REVIEW_MODEL`（可选）：评审使用的模型，默认 `claude-opus-5`
 - `CLAUDE_REVIEW_MAX_TURNS`（可选）：最多工具调用轮数，默认 `30`
 - `CLAUDE_REVIEW_EFFORT`（可选）：推理强度 `low` / `medium` / `high` / `xhigh` / `max`；不设置时用模型自身的默认值（Opus 5.5 为 `medium`，其他多数模型为 `high`）
+- `CLAUDE_REVIEW_MAX_BUDGET_USD`（可选）：单次评审的金额上限（美元），默认 `2`；超出即停止，本次按「评审失败、不合并」处理。只对 API Key 计费有意义
+- `AI_REVIEW_MAX_PER_DAY`（可选）：同一个 PR 24 小时内最多自动评审几次，默认 `10`；达到上限后不再调用模型，只提醒一次
+- `AUTO_MERGE_AUTHORS`（可选）：自动合并白名单，逗号分隔的 GitHub 用户名，默认只有仓库所有者；其他作者的 PR 只评审、不自动合并
 - `AI_REVIEW_MAX_DIFF_BYTES`（可选）：送给模型的 diff 上限（字节），默认 `60000`，超出部分截断
 
 另外请确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
 若 `main` 开启了分支保护（要求审批或状态检查），`GITHUB_TOKEN` 的自动合并会被拒绝，需要相应放宽规则。
+
+## 安全机制
+
+只有本仓库分支发起的 PR（即有写权限的人）会触发评审；fork 来的 PR 不评审、不消耗额度。在此基础上，针对提示词注入和额度消耗：
+
+| 风险 | 防护 |
+| --- | --- |
+| 注入让 agent 读取并泄露 Key / token | Claude Code 只能用 Read / Grep / Glob 读取工作区（PR 代码）内的文件（`blockReadsOutsideWorkingDirectories`），不能执行任何命令、不能联网；检出时不保存凭据；结论里出现疑似凭据时整份作废 |
+| 借评论外发数据、隐藏内容 | 渲染评论时转义模型输出中的 HTML 标签，并把图片语法改成纯文本（GitHub 会主动请求评论里的图片地址） |
+| 注入骗过评审、自动合并 | 自动合并需同时满足：模型结论干净、问题数为 0、整个 PR 全部送审、未改动 CI / 评审规则、**确定性扫描无可疑内容**（隐形 / 双向控制字符、常见注入话术，见 `scan.py`）、**作者在白名单中** |
+| 篡改评审规则 | 工作流、提示词、`render.py`、`scan.py` 都取自 `main`；改动它们的 PR 不自动合并 |
+| 额度被刷 | 单次评审：最多 30 轮工具调用、20 分钟、金额上限；同一 PR 24 小时内最多评审 `AI_REVIEW_MAX_PER_DAY` 次；diff 超过上限截断 |
+
+建议另外在 Anthropic Console 给所用 API Key 的 workspace 设置月度花费上限。
 
 ## 成本控制
 

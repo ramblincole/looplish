@@ -32,10 +32,34 @@ SAFE_PATH = re.compile(r"^[A-Za-z0-9._/@+\-]+$")
 VERBATIM_FIELDS = {"suggested_code"}
 
 
+# 前面带反斜杠的反引号在 Markdown 里不开启代码，这里也不当作代码处理
+CODE_SPAN = re.compile(r"(?<!\\)(`+)[\s\S]*?\1")
+# 类 HTML 的写法：标签、注释、<!DOCTYPE>、<?...?>；R<T>、a < b 这类不受影响
+TAG_LIKE = re.compile(r"<(?=[A-Za-z/!?])")
+
+
+def neutralize(text):
+    """代码之外的正文：转义类 HTML 标签（防止隐藏内容、伪造评审标记、<img> 外发请求），
+    并把图片语法改成普通文本（防止评论被渲染时向外部地址发请求，把数据带出去）。
+    反引号包起来的代码原样保留，GitHub 不会渲染其中的 HTML 和图片。"""
+    out, pos = [], 0
+    for m in CODE_SPAN.finditer(text):
+        out.append(_neutralize_prose(text[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(_neutralize_prose(text[pos:]))
+    # 图片语法无论在不在代码里都改掉：宁可代码片段里多一个反斜杠，也不留外发请求的口子
+    return "".join(out).replace("![", "!\\[")
+
+
+def _neutralize_prose(text):
+    return TAG_LIKE.sub("&lt;", text)
+
+
 def sanitize(value):
-    """递归处理模型给出的正文字符串：转义 HTML 注释起始符，防止伪造评审标记或隐藏内容。"""
+    """递归处理模型给出的正文字符串（见 neutralize）。"""
     if isinstance(value, str):
-        return value.replace("<!--", "&lt;!--")
+        return neutralize(value)
     if isinstance(value, list):
         return [sanitize(v) for v in value]
     if isinstance(value, dict):
