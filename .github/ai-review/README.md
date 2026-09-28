@@ -23,9 +23,16 @@
   - Critical / Important 逐条展开，位置可点击跳到 PR 最新提交里的对应代码行
   - 增量评审附「上次问题跟进」表；Minor 和「做得好的」默认折叠
   - `render.py` 和提示词一样只取 `main` 上的版本
+- 严重级别按现实后果定：Critical / Important 需要能说清具体的触发路径；需要多个前提同时成立的、只在理论上可能的、已有其他防线兜底的加固建议都算 Minor。增量评审只对新提交提新问题，旧代码里除非是 Critical 不再新提
 - **无 Critical 且无 Important** 时：自动 squash 合并、删除 PR 分支，并把报告邮件发给仓库所有者。
 - 以下任一情况不合并：有 Critical / Important；问题计数为 0 但结论不是「可以合并」；有锁文件 / 构建产物未送审或 diff 被截断（评审覆盖不完整）；评审失败；评审期间有新推送（`--match-head-commit`）。
 - 草稿 PR 和来自 fork 的 PR 不评审、不合并。
+- 评审结论写在提交状态 **「AI 评审」** 上，和工作流本身的 ✅（只表示流程跑完了）分开：
+  - ⏳ pending：评审进行中
+  - ✅ success：没有 Critical / Important；因其他原因不能自动合并时（如改动了评审配置、作者不在白名单），描述里会写「需人工合并」和原因
+  - ❌ failure：有 Critical / Important、结论与计数不一致，或评审失败 / 流程出错 / 达到次数上限
+  - ⚠️ error：本次评审被取消（有新提交或超时）
+- 评审说明文字的语言由 `AI_REVIEW_LANGUAGE` 决定（默认简体中文）；代码、路径、报错原文保持原样。
 
 ## 需要配置（Settings → Secrets and variables → Actions）
 
@@ -39,10 +46,28 @@ Variables：
 - `CLAUDE_REVIEW_MODEL`（可选）：评审使用的模型，默认 `claude-opus-5`
 - `CLAUDE_REVIEW_MAX_TURNS`（可选）：最多工具调用轮数，默认 `30`
 - `CLAUDE_REVIEW_EFFORT`（可选）：推理强度 `low` / `medium` / `high` / `xhigh` / `max`；不设置时用模型自身的默认值（Opus 5.5 为 `medium`，其他多数模型为 `high`）
+- `CLAUDE_REVIEW_MAX_BUDGET_USD`（可选）：单次评审的金额上限（美元），默认 `2`；超出即停止，本次按「评审失败、不合并」处理。只对 API Key 计费有意义
+- `AI_REVIEW_MAX_PER_DAY`（可选）：同一个 PR 24 小时内最多自动评审几次，默认 `10`；达到上限后不再调用模型，只提醒一次
+- `AUTO_MERGE_AUTHORS`（可选）：自动合并白名单，逗号分隔的 GitHub 用户名，默认只有仓库所有者；其他作者的 PR 只评审、不自动合并
+- `AI_REVIEW_LANGUAGE`（可选）：评审报告使用的语言，默认 `简体中文`
 - `AI_REVIEW_MAX_DIFF_BYTES`（可选）：送给模型的 diff 上限（字节），默认 `60000`，超出部分截断
 
 另外请确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
 若 `main` 开启了分支保护（要求审批或状态检查），`GITHUB_TOKEN` 的自动合并会被拒绝，需要相应放宽规则。
+
+## 安全机制
+
+只有本仓库分支发起的 PR（即有写权限的人）会触发评审；fork 来的 PR 不评审、不消耗额度。在此基础上，针对提示词注入和额度消耗：
+
+| 风险 | 防护 |
+| --- | --- |
+| 注入让 agent 读取并泄露 Key / token | Claude Code 只能用 Read / Grep / Glob 读取工作区（PR 代码）内的文件（`blockReadsOutsideWorkingDirectories`），不能执行任何命令、不能联网；检出时不保存凭据；结论里出现疑似凭据时整份作废 |
+| 借评论外发数据、隐藏内容 | 模型写的文字一律按纯文本渲染：转义反引号、`[`、`<` 等，不能写链接、图片、HTML（GitHub 会主动请求评论里的图片地址）；格式全部由 `render.py` 生成，修复代码放在它生成的代码块里原样显示 |
+| 注入骗过评审、自动合并 | 自动合并需同时满足：模型结论干净、问题数为 0、整个 PR 全部送审、未改动 CI / 评审规则、**确定性扫描无可疑内容**（隐形 / 双向控制字符、常见注入话术，见 `scan.py`）、**作者在白名单中** |
+| 篡改评审规则 | 工作流、提示词、`render.py`、`scan.py` 都取自 `main`；改动它们的 PR 不自动合并 |
+| 额度被刷 | 单次评审：最多 30 轮工具调用、20 分钟、金额上限；同一 PR 24 小时内最多评审 `AI_REVIEW_MAX_PER_DAY` 次（每次调用模型前先发「⏳ 评审进行中」占位评论并据此计数，被新推送取消的运行同样计入）；diff 超过上限截断 |
+
+建议另外在 Anthropic Console 给所用 API Key 的 workspace 设置月度花费上限。
 
 ## 成本控制
 
@@ -73,6 +98,8 @@ Variables：
 
 - Require a pull request before merging
 - Require review from Code Owners
+
+如果希望有阻塞问题的 PR 在合并按钮处就被拦住，可以再开启 Require status checks to pass，并把 **「AI 评审」** 加为必需检查（这个状态至少出现过一次后才能在列表里搜到）。注意：fork 来的 PR 和草稿 PR 不会产生这个状态，开启后它们需要管理员绕过才能合并。
 
 工作流本身也会拒绝自动合并改动这两个目录的 PR；在 `pull_request_target` 下这条规则取自 `main`，PR 删不掉它。
 

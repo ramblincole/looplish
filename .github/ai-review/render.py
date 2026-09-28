@@ -30,12 +30,26 @@ SAFE_PATH = re.compile(r"^[A-Za-z0-9._/@+\-]+$")
 
 # 放进代码块的字段原样保留：代码块里的 HTML 实体不会被解析，转义反而会让修复代码无法照抄
 VERBATIM_FIELDS = {"suggested_code"}
+# 代码块语言名只允许这些字符：反引号围栏的语言名里一旦出现反引号，围栏就不成立，修复代码会被当正文渲染
+SAFE_LANG = re.compile(r"^[A-Za-z0-9_+#.\-]{1,30}$")
+
+
+def neutralize(text):
+    """模型写的文字一律按纯文本显示，不保留任何 Markdown / HTML 能力：
+    转义反斜杠、反引号和 [（不能开启代码、链接、图片），把 < 转成 &lt;（不能写 HTML，
+    防止隐藏内容、伪造评审标记、<img> 外发请求）。
+    不去识别「哪段是代码」：只要识别，就有和 GitHub 解析器切分不一致、HTML 借此漏出的可能。
+    代价是行内代码显示为带反引号的普通文字；格式全部由本脚本生成。"""
+    # 先转义反斜杠：否则模型写的 \` 会变成 \\`，反引号又能生效
+    for ch in ("\\", "`", "["):
+        text = text.replace(ch, "\\" + ch)
+    return text.replace("<", "&lt;")
 
 
 def sanitize(value):
-    """递归处理模型给出的正文字符串：转义 HTML 注释起始符，防止伪造评审标记或隐藏内容。"""
+    """递归处理模型给出的正文字符串（见 neutralize）。"""
     if isinstance(value, str):
-        return value.replace("<!--", "&lt;!--")
+        return neutralize(value)
     if isinstance(value, list):
         return [sanitize(v) for v in value]
     if isinstance(value, dict):
@@ -63,8 +77,9 @@ def location(f, repo, sha, server):
     if start > 0:
         label += f":{start}" + (f"-{end}" if end > start else "")
     # 只给看起来正常的仓库内相对路径生成链接
+    # 其他路径按纯文本显示（已被 neutralize 转义），不再包反引号，免得和转义字符组合出新的代码配对
     if not SAFE_PATH.match(path) or ".." in path.split("/"):
-        return f"`{label}`"
+        return label
     url = f"{server}/{repo}/blob/{sha}/{quote(path)}"
     if start > 0:
         url += f"#L{start}" + (f"-L{end}" if end > start else "")
@@ -94,7 +109,8 @@ def render_finding(i, f, repo, sha, server):
     code = str(f.get("suggested_code") or "").rstrip()
     if code:
         fc = fence(code)
-        out += ["", f"{fc}{one_line(f.get('code_language')) or ''}", code, fc]
+        lang = one_line(f.get("code_language"))
+        out += ["", fc + (lang if SAFE_LANG.match(lang) else ""), code, fc]
     out.append("")
     return out
 
