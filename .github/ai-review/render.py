@@ -28,14 +28,18 @@ FOLLOWUP_STATUS = {
 SAFE_PATH = re.compile(r"^[A-Za-z0-9._/@+\-]+$")
 
 
+# 放进代码块的字段原样保留：代码块里的 HTML 实体不会被解析，转义反而会让修复代码无法照抄
+VERBATIM_FIELDS = {"suggested_code"}
+
+
 def sanitize(value):
-    """递归处理模型给出的所有字符串：去掉 HTML 注释起始符，防止伪造评审标记或隐藏内容。"""
+    """递归处理模型给出的正文字符串：转义 HTML 注释起始符，防止伪造评审标记或隐藏内容。"""
     if isinstance(value, str):
         return value.replace("<!--", "&lt;!--")
     if isinstance(value, list):
         return [sanitize(v) for v in value]
     if isinstance(value, dict):
-        return {k: sanitize(v) for k, v in value.items()}
+        return {k: v if k in VERBATIM_FIELDS else sanitize(v) for k, v in value.items()}
     return value
 
 
