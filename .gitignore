@@ -28,3 +28,4 @@ models/
 !tests/e2e/fixtures/*.wav
 .DS_Store
 Thumbs.db
+.idea/
