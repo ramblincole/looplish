@@ -52,3 +52,8 @@ python_version = "3.13"
 strict = true
 plugins = ["pydantic.mypy"]
 packages = ["looplish_api"]
+
+[[tool.mypy.overrides]]
+# yt-dlp 不带类型标注，适配器内按 Any 处理其返回值。
+module = ["yt_dlp", "yt_dlp.*"]
+ignore_missing_imports = true
