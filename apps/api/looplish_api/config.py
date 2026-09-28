@@ -1,3 +1,4 @@
+import ipaddress
 import os
 from pathlib import Path
 from shutil import which
@@ -49,6 +50,25 @@ class Settings(BaseSettings):
     seg_hard_pause_seconds: float = 0.75
     seg_lead_pad_seconds: float = 0.20
     seg_tail_pad_seconds: float = 0.40
+    # 是否允许用服务器上的本机文件路径创建任务；不设置时只在监听回环地址时允许。
+    allow_local_paths: bool | None = None
+
+    @property
+    def listens_on_loopback(self) -> bool:
+        if self.host.strip().lower() == "localhost":
+            return True
+        try:
+            return ipaddress.ip_address(self.host.strip().strip("[]")).is_loopback
+        except ValueError:
+            # 主机名无法判断时按对外服务处理，偏向安全。
+            return False
+
+    @property
+    def local_paths_enabled(self) -> bool:
+        # 对外监听（如 Docker 的 0.0.0.0）时默认关闭，别人不能让服务读取服务器上的任意文件。
+        if self.allow_local_paths is not None:
+            return self.allow_local_paths
+        return self.listens_on_loopback
 
     @classmethod
     def from_environment(cls) -> Self:

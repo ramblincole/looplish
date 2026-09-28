@@ -429,3 +429,23 @@ def test_configure_logging_writes_jsonl(tmp_path: Path) -> None:
 
     assert json.loads(lines[-1])["event"] == "test.event"
     assert "ignored text" not in lines[-1]
+
+
+def test_disabled_local_paths_reject_without_touching_filesystem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from looplish_api.domain.errors import LocalPathsDisabled
+
+    svc, _ = service(tmp_path)
+    svc.allow_local_paths = False
+    media = tmp_path / "lesson.mp4"
+    media.write_bytes(b"media")
+    touched: list[object] = []
+    monkeypatch.setattr(Path, "is_file", lambda self: touched.append(self) or True)
+
+    for source in (str(media), str(tmp_path / "missing.mp4")):
+        with pytest.raises(LocalPathsDisabled):
+            svc.create_from_source(CreateJobCommand(source, options()))
+
+    assert touched == []
+    assert svc.create_from_source(CreateJobCommand(URL, options())).status is JobStatus.QUEUED

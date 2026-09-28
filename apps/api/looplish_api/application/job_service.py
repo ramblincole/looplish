@@ -20,10 +20,13 @@ from looplish_api.application.exporter import ArtifactExporter
 from looplish_api.application.job_runner import JobRunner
 from looplish_api.application.processing_pipeline import is_url
 from looplish_api.domain.errors import (
+    ArtifactNotFound,
     DomainError,
     JobNotFound,
     JobNotReady,
     JobRunning,
+    LocalPathsDisabled,
+    SentenceNotFound,
     ServiceStopping,
     SourceNotSupported,
     UploadTooLarge,
@@ -44,6 +47,8 @@ logger = logging.getLogger(__name__)
 UPLOAD_CHUNK_BYTES = 1_048_576
 UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]")
 MAX_FILENAME_LENGTH = 100
+# 字幕格式到产物名的固定映射，客户端只能在这三个里选。
+SUBTITLE_ARTIFACTS = {"srt": "subtitles.srt", "vtt": "subtitles.vtt", "txt": "sentences.txt"}
 
 
 def new_job_id() -> str:
@@ -67,14 +72,16 @@ class JobService:
         runner: JobRunner,
         exporter: ArtifactExporter,
         max_upload_bytes: int,
+        allow_local_paths: bool = True,
     ) -> None:
         self.repository = repository
         self.store = store
         self.runner = runner
         self.exporter = exporter
         self.max_upload_bytes = max_upload_bytes
-        # 重切句会重写结果、字幕并删除切片，同一时刻只允许一个在进行。
-        self._resegment_lock = RLock()
+        self.allow_local_paths = allow_local_paths
+        # 重切句会重写结果、字幕并删除切片；切片和素材包生成与它互斥，避免按旧句子写出切片。
+        self._artifact_lock = RLock()
 
     def _ensure_accepting(self) -> None:
         if self.runner.stopping.is_set():
@@ -102,6 +109,9 @@ class JobService:
         source = command.source.strip()
         if is_url(source):
             title = source
+        elif not self.allow_local_paths:
+            # 先于任何文件系统访问拒绝，不透露服务器上某个路径是否存在。
+            raise LocalPathsDisabled()
         else:
             path = Path(source).expanduser()
             if not path.is_absolute() or not path.is_file():
@@ -163,7 +173,7 @@ class JobService:
         return result
 
     def resegment(self, job_id: str, command: ResegmentCommand) -> JobResult:
-        with self._resegment_lock:
+        with self._artifact_lock:
             job = self.get_job(job_id)
             result = self.get_result(job_id)
             # 按句子顺序展平持久化的词流；不下载、不转码、不调用识别。
@@ -199,3 +209,33 @@ class JobService:
             raise JobRunning()
         self.repository.delete(job_id)
         logger.info("job deleted", extra={"event": "job.deleted", "jobId": job_id})
+
+    def _existing(self, job_id: str, name: str) -> Path:
+        path = self.store.artifact_path(job_id, name)
+        if not path.is_file():
+            raise ArtifactNotFound()
+        return path
+
+    def audio_file(self, job_id: str) -> tuple[JobResult, Path]:
+        result = self.get_result(job_id)
+        return result, self._existing(job_id, result.audio_artifact)
+
+    def subtitle_file(self, job_id: str, fmt: str) -> tuple[JobResult, Path]:
+        result = self.get_result(job_id)
+        name = SUBTITLE_ARTIFACTS.get(fmt)
+        if name is None:
+            raise ArtifactNotFound()
+        return result, self._existing(job_id, name)
+
+    def clip_file(self, job_id: str, index: int) -> tuple[JobResult, Path]:
+        result = self.get_result(job_id)
+        if not 0 <= index < len(result.sentences):
+            raise SentenceNotFound()
+        with self._artifact_lock:
+            # 切片按需生成并缓存；与重切句互斥，不会按旧句子边界写出切片。
+            return result, self.exporter.ensure_clip(result, index)
+
+    def bundle_file(self, job_id: str, include_clips: bool) -> tuple[JobResult, Path]:
+        result = self.get_result(job_id)
+        with self._artifact_lock:
+            return result, self.exporter.build_bundle(result, include_clips)
