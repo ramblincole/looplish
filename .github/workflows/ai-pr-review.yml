@@ -400,6 +400,8 @@ jobs:
             if [ "$RATE_LIMITED" = "true" ]; then echo "<!-- ai-auto-review-limited -->"; fi
             if [ -s "$WORK_DIR/review.md" ]; then
               cat "$WORK_DIR/review.md"
+            elif [ "$RATE_LIMITED" = "true" ]; then
+              echo "⏸ ${BLOCK_REASON}。24 小时窗口内的评审次数回落后，推送新提交会自动恢复评审；也可以直接人工评审。"
             else
               echo "自动评审未能生成报告，请查看 [workflow 日志]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)。本 PR 不会被自动合并。"
             fi
