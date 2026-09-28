@@ -64,13 +64,17 @@ jobs:
             --jq '[.comments[] | select((.author.login == "github-actions" or .author.login == "github-actions[bot]") and (.body | contains("<!-- ai-auto-review-sha: ")))] | last | .body // ""' \
             > "$WORK_DIR/previous_review.md"
           gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' > "$WORK_DIR/pr_body.md"
-          # 限流：统计 24 小时内实际调用过模型的评审次数（带 run 标记的机器人评论）
+          # 限流：统计本 PR 近 24 小时内实际开始过的评审次数。
+          # 每次调用模型之前都会先发一条带 run 标记的「评审进行中」占位评论（见 Mark review started），
+          # 所以即使运行随后被新推送取消，这次也已计数，无法靠连续推送绕过上限。
+          # 不用 Actions 运行记录计数：其中的 PR 编号是按分支事后推算的，同一分支复用时会把别的 PR 的运行算进来
           SINCE=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          # 限流期间只提醒一次：看最近一条机器人评审评论是不是限流提醒
           gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments \
             --jq '[.comments[] | select(.author.login == "github-actions" or .author.login == "github-actions[bot]") | select(.body | startswith("<!-- ai-auto-review -->"))]' \
             > "$WORK_DIR/bot_comments.json"
-          RUNS_24H=$(jq --arg since "$SINCE" '[.[] | select(.createdAt >= $since) | select(.body | contains("<!-- ai-auto-review-run -->"))] | length' "$WORK_DIR/bot_comments.json")
           LAST_LIMITED=$(jq -r 'if (last // {} | .body // "" | contains("<!-- ai-auto-review-limited -->")) then "true" else "false" end' "$WORK_DIR/bot_comments.json")
+          RUNS_24H=$(jq --arg since "$SINCE" '[.[] | select(.createdAt >= $since) | select(.body | contains("<!-- ai-auto-review-run -->"))] | length' "$WORK_DIR/bot_comments.json")
           echo "runs_24h=$RUNS_24H" >> "$GITHUB_OUTPUT"
           echo "last_limited=$LAST_LIMITED" >> "$GITHUB_OUTPUT"
           # 标记由工作流写在评论最前面，取第一个；评论正文里即使出现同样的文字也不会被当成标记
@@ -135,7 +139,9 @@ jobs:
           # 确定性扫描（不依赖模型）：隐形 / 双向控制字符、提示词注入话术。命中则只评审、不自动合并
           git show "origin/$BASE_REF:.github/ai-review/scan.py" > "$WORK_DIR/scan.py"
           git diff "$MERGE_BASE" "$HEAD_SHA" > "$WORK_DIR/full.diff"
-          python3 -B "$WORK_DIR/scan.py" "$WORK_DIR/full.diff" "$WORK_DIR/pr_body.md" > "$WORK_DIR/scan.txt"
+          # PR 标题、描述和提交说明都会进入提示词，一并扫描
+          { printf '%s\n' "$PR_TITLE"; cat "$WORK_DIR/pr_body.md"; echo; git log --format=%B "$MERGE_BASE..$HEAD_SHA"; } > "$WORK_DIR/pr_text.txt"
+          python3 -B "$WORK_DIR/scan.py" "$WORK_DIR/full.diff" "$WORK_DIR/pr_text.txt" > "$WORK_DIR/scan.txt"
           if [ -s "$WORK_DIR/scan.txt" ]; then
             echo "suspicious=true" >> "$GITHUB_OUTPUT"
             echo "::warning::可疑内容扫描命中 $(wc -l < "$WORK_DIR/scan.txt") 项"
@@ -242,6 +248,19 @@ jobs:
             echo "reason=模型接口预检失败（HTTP $CODE，模型 $MODEL）：${MSG:-无响应或无法连接接口地址}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Mark review started
+        id: started
+        if: steps.preflight.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # 先发占位评论再调用模型：run 标记用于限流计数，评审结束后原地更新为结果
+          printf '<!-- ai-auto-review -->\n<!-- ai-auto-review-run -->\n⏳ AI 评审进行中（提交 `%s`）…\n' "${HEAD_SHA:0:7}" > "$WORK_DIR/placeholder.md"
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@"$WORK_DIR/placeholder.md" --jq .id)
+          echo "comment_id=$ID" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude Code review
         id: claude
         if: steps.preflight.outputs.ok == 'true'
@@ -296,6 +315,7 @@ jobs:
           PREFLIGHT_OK: ${{ steps.preflight.outputs.ok }}
           PREFLIGHT_REASON: ${{ steps.preflight.outputs.reason }}
           SUSPICIOUS: ${{ steps.prompt.outputs.suspicious }}
+          RATE_LIMITED: ${{ steps.preflight.outputs.rate_limited }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           # 自动合并白名单（逗号分隔的 GitHub 用户名），默认只有仓库所有者；其他人的 PR 只评审、不自动合并
           AUTO_MERGE_AUTHORS: ${{ vars.AUTO_MERGE_AUTHORS || github.repository_owner }}
@@ -309,7 +329,9 @@ jobs:
             echo "critical=-1" >> "$GITHUB_OUTPUT"
             echo "important=-1" >> "$GITHUB_OUTPUT"
             echo "mergeable=false" >> "$GITHUB_OUTPUT"
-            if [ "$PREFLIGHT_OK" != "true" ]; then
+            if [ "$RATE_LIMITED" = "true" ]; then
+              echo "block_reason=${PREFLIGHT_REASON}" >> "$GITHUB_OUTPUT"
+            elif [ "$PREFLIGHT_OK" != "true" ]; then
               echo "block_reason=评审失败：${PREFLIGHT_REASON}" >> "$GITHUB_OUTPUT"
             else
               echo "block_reason=评审失败，没有得到有效结论" >> "$GITHUB_OUTPUT"
@@ -358,8 +380,8 @@ jobs:
         # 限流期间只提醒一次，之后的触发不再发评论
         if: ${{ !cancelled() && steps.verdict.outcome == 'success' && !(steps.preflight.outputs.rate_limited == 'true' && steps.scope.outputs.last_limited == 'true') }}
         env:
-          CLAUDE_RAN: ${{ steps.claude.outcome == 'success' || steps.claude.outcome == 'failure' }}
           RATE_LIMITED: ${{ steps.preflight.outputs.rate_limited }}
+          COMMENT_ID: ${{ steps.started.outputs.comment_id }}
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           REVIEW_MODE: ${{ steps.scope.outputs.mode }}
@@ -373,8 +395,8 @@ jobs:
             echo "<!-- ai-auto-review -->"
             # 只有评审成功才记录已评审的提交，下一次增量从这里开始
             if [ "$REVIEWED" = "true" ]; then echo "<!-- ai-auto-review-sha: $HEAD_SHA -->"; fi
-            # 用于限流计数：本次实际调用了模型
-            if [ "$CLAUDE_RAN" = "true" ]; then echo "<!-- ai-auto-review-run -->"; fi
+            # 占位评论上的 run 标记保留，限流计数依赖它
+            if [ -n "$COMMENT_ID" ]; then echo "<!-- ai-auto-review-run -->"; fi
             if [ "$RATE_LIMITED" = "true" ]; then echo "<!-- ai-auto-review-limited -->"; fi
             if [ -s "$WORK_DIR/review.md" ]; then
               cat "$WORK_DIR/review.md"
@@ -399,7 +421,11 @@ jobs:
             echo
             echo "_由 Claude Code 自动评审生成_"
           } > "$BODY"
-          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY"
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" -F body=@"$BODY" --silent
+          else
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$BODY"
+          fi
 
       - name: Auto-merge and delete branch
         id: merge
@@ -474,3 +500,14 @@ jobs:
           subject: "[${{ github.repository }}] PR #${{ github.event.pull_request.number }} 已自动合并：${{ github.event.pull_request.title }}"
           convert_markdown: true
           html_body: file://${{ env.WORK_DIR }}/email.md
+
+      - name: Mark cancelled review
+        # 被新推送取消或超时时，把「评审进行中」占位评论改成已取消（保留 run 标记，限流仍计数）
+        if: ${{ cancelled() && steps.started.outputs.comment_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          COMMENT_ID: ${{ steps.started.outputs.comment_id }}
+        run: |
+          printf '<!-- ai-auto-review -->\n<!-- ai-auto-review-run -->\n⏹ 本次 AI 评审（提交 `%s`）已取消：有新的提交，或运行被取消 / 超时。以最新一轮评审为准。\n' "${HEAD_SHA:0:7}" > "$WORK_DIR/cancelled.md"
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" -F body=@"$WORK_DIR/cancelled.md" --silent

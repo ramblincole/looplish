@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """在把改动交给模型之前，用确定性规则扫描可疑内容。
 
-用法：scan.py <diff 文件> <PR 描述文件>
+用法：scan.py <diff 文件> <PR 文本文件（标题、描述、提交说明）>
 输出（stdout，每行一条）：命中的问题摘要；没有命中时不输出。
 
-只检查 diff 中新增的行和 PR 描述。命中不会阻止评审，只会让本 PR 不能自动合并，
+只检查 diff 中新增的行，以及 PR 标题、描述和提交说明。命中不会阻止评审，只会让本 PR 不能自动合并，
 交给人工确认——模型可能被注入内容骗过，这道检查不依赖模型。
 """
 import re
@@ -12,10 +12,10 @@ import sys
 
 # 可让代码「看起来」和实际不同的字符（Trojan Source）以及零宽字符
 INVISIBLE = {
-    "‪": "LRE", "‫": "RLE", "‬": "PDF", "‭": "LRO", "‮": "RLO",
-    "⁦": "LRI", "⁧": "RLI", "⁨": "FSI", "⁩": "PDI",
-    "​": "零宽空格", "‌": "ZWNJ", "‍": "ZWJ", "⁠": "WJ", "﻿": "BOM/ZWNBSP",
-    "­": "软连字符",
+    "\u202a": "LRE", "\u202b": "RLE", "\u202c": "PDF", "\u202d": "LRO", "\u202e": "RLO",
+    "\u2066": "LRI", "\u2067": "RLI", "\u2068": "FSI", "\u2069": "PDI",
+    "\u200b": "零宽空格", "\u200c": "ZWNJ", "\u200d": "ZWJ", "\u2060": "WJ", "\ufeff": "BOM/ZWNBSP",
+    "\u00ad": "软连字符",
 }
 
 # 试图操纵评审 agent 的常见话术（中英文）
@@ -49,7 +49,7 @@ def added_lines(diff_text):
 
 def scan(diff_text, body_text):
     hits = []
-    sources = [(f, l) for f, l in added_lines(diff_text)] + [("PR 描述", l) for l in body_text.splitlines()]
+    sources = [(f, l) for f, l in added_lines(diff_text)] + [("PR 标题/描述/提交说明", l) for l in body_text.splitlines()]
 
     invisible = {}
     for where, line in sources:

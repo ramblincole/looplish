@@ -32,8 +32,9 @@ SAFE_PATH = re.compile(r"^[A-Za-z0-9._/@+\-]+$")
 VERBATIM_FIELDS = {"suggested_code"}
 
 
-# 前面带反斜杠的反引号在 Markdown 里不开启代码，这里也不当作代码处理
-CODE_SPAN = re.compile(r"(?<!\\)(`+)[\s\S]*?\1")
+# 只把同一行内成对的反引号当作代码：跨行（尤其跨空行、跨列表等块边界）时，
+# GitHub 可能不把它当代码，里面的 HTML 会被渲染。前面带反斜杠的反引号不开启代码。
+CODE_SPAN = re.compile(r"(?<!\\)(`+)[^\n]*?\1")
 # 类 HTML 的写法：标签、注释、<!DOCTYPE>、<?...?>；R<T>、a < b 这类不受影响
 TAG_LIKE = re.compile(r"<(?=[A-Za-z/!?])")
 
