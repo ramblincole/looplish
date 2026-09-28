@@ -28,6 +28,17 @@ FOLLOWUP_STATUS = {
 SAFE_PATH = re.compile(r"^[A-Za-z0-9._/@+\-]+$")
 
 
+def sanitize(value):
+    """递归处理模型给出的所有字符串：去掉 HTML 注释起始符，防止伪造评审标记或隐藏内容。"""
+    if isinstance(value, str):
+        return value.replace("<!--", "&lt;!--")
+    if isinstance(value, list):
+        return [sanitize(v) for v in value]
+    if isinstance(value, dict):
+        return {k: sanitize(v) for k, v in value.items()}
+    return value
+
+
 def one_line(text):
     """列表里的字段压成一行，避免破坏 Markdown 结构。"""
     return re.sub(r"\s*\n\s*", " ", str(text or "")).strip()
@@ -84,7 +95,7 @@ def render_finding(i, f, repo, sha, server):
     return out
 
 
-def render(data, repo, sha, mode, server):
+def render(data, repo, sha, mode, server, include_code=True, include_optional=True):
     findings = [f for f in data.get("findings") or [] if isinstance(f, dict)]
     by_sev = {k: [f for f in findings if f.get("severity") == k] for k in SEVERITY}
     n_crit, n_imp, n_min = (len(by_sev[k]) for k in ("critical", "important", "minor"))
@@ -92,7 +103,13 @@ def render(data, repo, sha, mode, server):
     mode_label = "增量" if mode == "incremental" else "全量"
 
     lines = []
-    verdict = "✅ 可以合并" if blocking == 0 else "❌ 建议修复后再看"
+    # 这里只表达评审发现；能否自动合并还取决于覆盖完整性等条件，由页脚说明
+    if blocking:
+        verdict = "❌ 有需要修复的问题"
+    elif data.get("conclusion") != "可以合并":
+        verdict = "⚠️ 未列出阻塞问题，但评审结论为「建议修复后再看」"
+    else:
+        verdict = "✅ 未发现阻塞问题"
     lines.append(f"## AI 评审（{mode_label}）：{verdict}")
     lines.append("")
     summary = str(data.get("summary") or "").strip()
@@ -112,7 +129,7 @@ def render(data, repo, sha, mode, server):
         lines.append(f"### {emoji} {name}（{len(items)}）— {hint}")
         lines.append("")
         for i, f in enumerate(items, 1):
-            lines += render_finding(i, f, repo, sha, server)
+            lines += render_finding(i, f if include_code else {**f, "suggested_code": ""}, repo, sha, server)
 
     followups = [x for x in data.get("followups") or [] if isinstance(x, dict)]
     if followups:
@@ -125,33 +142,44 @@ def render(data, repo, sha, mode, server):
             lines.append(f"| {cell(x.get('title'))} | {status} | {cell(x.get('note'))} |")
         lines.append("")
 
-    if by_sev["minor"]:
+    if by_sev["minor"] and include_optional:
         lines.append(f"<details><summary>🟡 Minor（{n_min}）— 可选改进，点击展开</summary>")
         lines.append("")
         for f in by_sev["minor"]:
             loc = location(f, repo, sha, server)
             text = one_line(f.get("problem"))
             sug = one_line(f.get("suggestion"))
-            lines.append(f"- **{one_line(f.get('title'))}**" + (f" {loc}" if loc else "") + f"：{text}" + (f"建议：{sug}" if sug else ""))
+            lines.append(f"- **{one_line(f.get('title'))}**" + (f" {loc}" if loc else "") + f"：{text}" + (f"；建议：{sug}" if sug else ""))
         lines += ["", "</details>", ""]
 
     highlights = [one_line(h) for h in data.get("highlights") or [] if str(h).strip()]
-    if highlights:
+    if not include_optional and (by_sev["minor"] or highlights):
+        lines += ["_报告过长，Minor 和「做得好的」已省略。_", ""]
+    if highlights and include_optional:
         lines.append(f"<details><summary>👍 做得好的（{len(highlights)}）</summary>")
         lines.append("")
         lines += [f"- {h}" for h in highlights]
         lines += ["", "</details>", ""]
 
     text = "\n".join(lines).rstrip() + "\n"
-    if len(text) > MAX_CHARS:
-        text = text[:MAX_CHARS] + "\n\n…（报告过长，已截断）\n"
     return text, n_crit, n_imp, n_min
+
+
+def render_within_limit(data, repo, sha, mode, server):
+    """超长时依次省略修复代码、Minor 和「做得好的」；仍然超长就在条目边界截断，不切断代码块或折叠块。"""
+    for include_code, include_optional in ((True, True), (False, True), (False, False)):
+        text, *counts = render(data, repo, sha, mode, server, include_code, include_optional)
+        if len(text) <= MAX_CHARS:
+            return (text, *counts)
+    cut = text.rfind("\n#### ", 0, MAX_CHARS)
+    text = text[: cut if cut > 0 else MAX_CHARS] + "\n\n…（报告过长，其余条目已截断）\n"
+    return (text, *counts)
 
 
 def main():
     with open(sys.argv[1], encoding="utf-8") as fh:
-        data = json.load(fh)
-    text, n_crit, n_imp, n_min = render(
+        data = sanitize(json.load(fh))
+    text, n_crit, n_imp, n_min = render_within_limit(
         data,
         repo=os.environ.get("REPO", ""),
         sha=os.environ.get("HEAD_SHA", ""),

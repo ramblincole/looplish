@@ -64,7 +64,8 @@ jobs:
             --jq '[.comments[] | select((.author.login == "github-actions" or .author.login == "github-actions[bot]") and (.body | contains("<!-- ai-auto-review-sha: ")))] | last | .body // ""' \
             > "$WORK_DIR/previous_review.md"
           gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' > "$WORK_DIR/pr_body.md"
-          PREV_SHA=$(grep -oE '<!-- ai-auto-review-sha: [0-9a-f]{40} -->' "$WORK_DIR/previous_review.md" | tail -n1 | grep -oE '[0-9a-f]{40}' || true)
+          # 标记由工作流写在评论最前面，取第一个；评论正文里即使出现同样的文字也不会被当成标记
+          PREV_SHA=$(grep -oE '<!-- ai-auto-review-sha: [0-9a-f]{40} -->' "$WORK_DIR/previous_review.md" | head -n1 | grep -oE '[0-9a-f]{40}' || true)
 
           # 增量的起点是上次成功评审的提交（而不是本次推送事件的 before），被取消的评审不会漏审。
           # 以下情况回退全量：没有成功评审过、上次评审的提交已不在历史中（force-push）、
