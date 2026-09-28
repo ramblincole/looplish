@@ -1,6 +1,6 @@
 # Claude Code 自动 PR 评审
 
-工作流：`.github/workflows/ai-pr-review.yml`，评审提示词：`.github/ai-review/prompt.md`。
+工作流：`.github/workflows/ai-pr-review.yml`，评审提示词：`.github/ai-review/prompt.md`，评论渲染：`.github/ai-review/render.py`。
 评审 agent 为 [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action)（Claude Code），只开放只读工具（Read / Glob / Grep 和 `git diff/log/show/blame`）：
 不能创建或修改任何文件，结论通过 `--json-schema` 约束的 `structured_output` 输出，由工作流发到 PR 评论。
 
@@ -18,7 +18,11 @@
 | PR 有新提交（`synchronize`） | 增量评审：只看上次成功评审之后的新提交，并逐条跟进上次报告的 Critical / Important |
 | 没有成功评审过、force-push、或新提交中含合并提交 | 回退为全量评审 |
 
-- 报告以 PR 评论发布，格式为「结论 / Critical / Important / Minor（摘要）/ 做得好的」。
+- 模型只输出结构化的问题清单（级别、标题、文件和行号、问题、影响、建议、可选的修复代码、是否已核实、是否需人工确认），由 `render.py` 统一排成 PR 评论：
+  - 顶部是结论、一两句摘要和各级问题数量；数量由脚本按清单统计，不依赖模型自己计数
+  - Critical / Important 逐条展开，位置可点击跳到 PR 最新提交里的对应代码行
+  - 增量评审附「上次问题跟进」表；Minor 和「做得好的」默认折叠
+  - `render.py` 和提示词一样只取 `main` 上的版本
 - **无 Critical 且无 Important** 时：自动 squash 合并、删除 PR 分支，并把报告邮件发给仓库所有者。
 - 以下任一情况不合并：有 Critical / Important；问题计数为 0 但结论不是「可以合并」；有锁文件 / 构建产物未送审或 diff 被截断（评审覆盖不完整）；评审失败；评审期间有新推送（`--match-head-commit`）。
 - 草稿 PR 和来自 fork 的 PR 不评审、不合并。

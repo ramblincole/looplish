@@ -64,7 +64,8 @@ jobs:
             --jq '[.comments[] | select((.author.login == "github-actions" or .author.login == "github-actions[bot]") and (.body | contains("<!-- ai-auto-review-sha: ")))] | last | .body // ""' \
             > "$WORK_DIR/previous_review.md"
           gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' > "$WORK_DIR/pr_body.md"
-          PREV_SHA=$(grep -oE '<!-- ai-auto-review-sha: [0-9a-f]{40} -->' "$WORK_DIR/previous_review.md" | tail -n1 | grep -oE '[0-9a-f]{40}' || true)
+          # 标记由工作流写在评论最前面，取第一个；评论正文里即使出现同样的文字也不会被当成标记
+          PREV_SHA=$(grep -oE '<!-- ai-auto-review-sha: [0-9a-f]{40} -->' "$WORK_DIR/previous_review.md" | head -n1 | grep -oE '[0-9a-f]{40}' || true)
 
           # 增量的起点是上次成功评审的提交（而不是本次推送事件的 before），被取消的评审不会漏审。
           # 以下情况回退全量：没有成功评审过、上次评审的提交已不在历史中（force-push）、
@@ -108,7 +109,7 @@ jobs:
                     ':(exclude,glob)**/dist/**' ':(exclude,glob)**/build/**' ':(exclude,glob)**/vendor/**')
           if [ "$REVIEW_MODE" = "incremental" ]; then
             export REVIEW_MODE_LABEL="增量"
-            export INCREMENTAL_RULES="5. 这是增量评审：附件只包含上次评审后新增的提交（不含从 main 合并进来的改动）。逐条核对上次报告中的 Critical / Important 在当前 HEAD 上是否已修复，仍存在的计入本次条数；报告在 Important 之后追加「上次问题跟进：」，逐条标注 已修复 / 仍存在 / 部分修复。"
+            export INCREMENTAL_RULES="5. 这是增量评审：附件只包含上次评审后新增的提交（不含从 main 合并进来的改动）。逐条核对上次报告中的 Critical / Important 在当前 HEAD 上是否已修复，结果写进 followups；仍存在或部分修复的问题同时列入 findings。"
             RANGE_FROM="$BEFORE"
             git log --no-merges -p --format='commit %H%n%s%n' "$BEFORE..$HEAD_SHA" -- . "${EXCLUDES[@]}" > "$WORK_DIR/changes.diff"
           else
@@ -243,7 +244,7 @@ jobs:
             --max-turns ${{ vars.CLAUDE_REVIEW_MAX_TURNS || '30' }}
             ${{ vars.CLAUDE_REVIEW_EFFORT && format('--effort {0}', vars.CLAUDE_REVIEW_EFFORT) || '' }}
             --allowedTools "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*)"
-            --json-schema '{"type":"object","additionalProperties":false,"required":["critical","important","minor","conclusion","report"],"properties":{"critical":{"type":"integer","minimum":0},"important":{"type":"integer","minimum":0},"minor":{"type":"integer","minimum":0},"conclusion":{"type":"string","enum":["可以合并","建议修复后再看"]},"report":{"type":"string"}}}'
+            --json-schema '{"type":"object","additionalProperties":false,"required":["summary","conclusion","findings","followups","highlights"],"properties":{"summary":{"type":"string"},"conclusion":{"type":"string","enum":["可以合并","建议修复后再看"]},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["severity","title","file","line_start","line_end","problem","impact","suggestion","suggested_code","code_language","verified","needs_human"],"properties":{"severity":{"type":"string","enum":["critical","important","minor"]},"title":{"type":"string"},"file":{"type":"string"},"line_start":{"type":"integer","minimum":0},"line_end":{"type":"integer","minimum":0},"problem":{"type":"string"},"impact":{"type":"string"},"suggestion":{"type":"string"},"suggested_code":{"type":"string"},"code_language":{"type":"string"},"verified":{"type":"boolean"},"needs_human":{"type":"boolean"}}}},"followups":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["title","status","note"],"properties":{"title":{"type":"string"},"status":{"type":"string","enum":["fixed","partially_fixed","still_open"]},"note":{"type":"string"}}}},"highlights":{"type":"array","items":{"type":"string"}}}}'
 
       - name: Parse verdict
         id: verdict
@@ -253,6 +254,11 @@ jobs:
           COVERAGE_NOTE: ${{ steps.prompt.outputs.coverage_note }}
           TOUCHES_REVIEW_CONFIG: ${{ steps.prompt.outputs.touches_review_config }}
           STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          REVIEW_MODE: ${{ steps.scope.outputs.mode }}
+          SERVER_URL: ${{ github.server_url }}
           PREFLIGHT_OK: ${{ steps.preflight.outputs.ok }}
           PREFLIGHT_REASON: ${{ steps.preflight.outputs.reason }}
         run: |
@@ -260,7 +266,7 @@ jobs:
           RESULT="$WORK_DIR/result.json"
           printf '%s' "$STRUCTURED_OUTPUT" > "$RESULT"
           # 结果缺失或格式不对都视为不可合并（fail-safe）
-          if ! jq -e '(.critical|type=="number") and (.important|type=="number") and (.report|type=="string" and length>0)' "$RESULT" >/dev/null 2>&1; then
+          if ! jq -e '(.findings|type=="array") and (.conclusion|type=="string") and (.summary|type=="string")' "$RESULT" >/dev/null 2>&1; then
             echo "::error::Claude Code 没有输出有效的评审结果"
             echo "critical=-1" >> "$GITHUB_OUTPUT"
             echo "important=-1" >> "$GITHUB_OUTPUT"
@@ -272,17 +278,18 @@ jobs:
             fi
             exit 0
           fi
-          # 报告里出现疑似凭据（GitHub token / API key）时整份作废，不发到公开评论（防提示注入外泄）
-          if jq -r '.report' "$RESULT" | grep -Eq 'gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|(^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{30,}'; then
-            echo "::error::评审报告中含疑似凭据，已丢弃"
+          # 结论里出现疑似凭据（GitHub token / API key）时整份作废，不发到公开评论（防提示注入外泄）
+          if grep -Eq 'gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|(^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{30,}' "$RESULT"; then
+            echo "::error::评审结论中含疑似凭据，已丢弃"
             echo "mergeable=false" >> "$GITHUB_OUTPUT"
-            echo "block_reason=评审报告中含疑似凭据，已丢弃，需人工检查本 PR" >> "$GITHUB_OUTPUT"
+            echo "block_reason=评审结论中含疑似凭据，已丢弃，需人工检查本 PR" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # 评论正文上限 65536 字符，留出页脚余量
-          jq -r 'if (.report|length) > 60000 then .report[:60000] + "\n\n…（报告过长，已截断）" else .report end' "$RESULT" > "$WORK_DIR/review.md"
-          CRITICAL=$(jq -r '.critical' "$RESULT")
-          IMPORTANT=$(jq -r '.important' "$RESULT")
+          # 渲染脚本和提示词一样只取目标分支的版本（工作区里是 PR 的代码）；计数由脚本按 findings 统计
+          git show "origin/$BASE_REF:.github/ai-review/render.py" > "$WORK_DIR/render.py"
+          python3 "$WORK_DIR/render.py" "$RESULT" "$WORK_DIR/review.md" > "$WORK_DIR/counts.txt"
+          CRITICAL=$(sed -n 's/^critical=//p' "$WORK_DIR/counts.txt")
+          IMPORTANT=$(sed -n 's/^important=//p' "$WORK_DIR/counts.txt")
           CONCLUSION=$(jq -r '.conclusion' "$RESULT")
           echo "critical=$CRITICAL" >> "$GITHUB_OUTPUT"
           echo "important=$IMPORTANT" >> "$GITHUB_OUTPUT"
