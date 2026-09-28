@@ -50,7 +50,7 @@ Variables：
 - `AI_REVIEW_MAX_PER_DAY`（可选）：同一个 PR 24 小时内最多自动评审几次，默认 `10`；达到上限后不再调用模型，只提醒一次
 - `AUTO_MERGE_AUTHORS`（可选）：自动合并白名单，逗号分隔的 GitHub 用户名，默认只有仓库所有者；其他作者的 PR 只评审、不自动合并
 - `AI_REVIEW_LANGUAGE`（可选）：评审报告使用的语言，默认 `简体中文`
-- `AI_REVIEW_MAX_DIFF_BYTES`（可选）：送给模型的 diff 上限（字节），默认 `60000`，超出部分截断
+- `AI_REVIEW_MAX_DIFF_BYTES`（可选）：送给模型的 diff 上限（字节），默认 `60000`，最大 `100000`，超出部分截断。整个提示词要放进一个环境变量（上限 131072 字节），所以 diff 优先占用空间，增量评审时的上次报告（最多 30000 字节）只用剩下的；两者任一被截断，本次评审都不会自动合并
 
 另外请确认 Settings → Actions → General → Workflow permissions 为 “Read and write permissions”。
 若 `main` 开启了分支保护（要求审批或状态检查），`GITHUB_TOKEN` 的自动合并会被拒绝，需要相应放宽规则。
