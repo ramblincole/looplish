@@ -59,3 +59,7 @@ Variables：
 - 每次评审前会先用同样的地址、模型和 Key 发一个极小的测试请求（预检）。地址、模型名或 Key 不对时立即失败，PR 评论会写出 HTTP 状态码和接口返回的错误信息。
 - 排查问题时把 Variable `AI_REVIEW_DEBUG` 设为 `true`，Actions 日志会显示 Claude Code 的完整输出（含它读到的文件内容），排查完改回来。
 - 切回 Anthropic 官方：删掉 `ANTHROPIC_BASE_URL`，把 `CLAUDE_REVIEW_MODEL` 改回 Claude 模型（或删掉，使用默认值），Secret 换回 Anthropic 的 Key。
+
+## 建议的分支保护
+
+工作流里的「改动 CI / 评审规则就不自动合并」只能挡住无意的改动：`pull_request` 事件运行的是 PR 里的工作流文件，恶意 PR 可以连这条检查一起删掉。请在 `main` 的分支保护里为 `.github/workflows/**` 和 `.github/ai-review/**` 配置 CODEOWNERS，并开启「Require review from Code Owners」。

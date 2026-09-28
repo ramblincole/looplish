@@ -26,7 +26,6 @@ env:
   # 放在工作区之外，不会被当作仓库内容
   WORK_DIR: ${{ github.workspace }}/../ai-review-work
   PR_NUMBER: ${{ github.event.pull_request.number }}
-  GH_TOKEN: ${{ github.token }}
 
 jobs:
   review:
@@ -46,6 +45,7 @@ jobs:
       - name: Determine review scope
         id: scope
         env:
+          GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
@@ -92,6 +92,9 @@ jobs:
           MAX_DIFF_BYTES: ${{ vars.AI_REVIEW_MAX_DIFF_BYTES || '60000' }}
         run: |
           set -euo pipefail
+          # 非法值回退默认；上限 100000，避免提示词超出 action 输入 / 环境变量长度限制
+          [[ "$MAX_DIFF_BYTES" =~ ^[0-9]+$ ]] && [ "$MAX_DIFF_BYTES" -gt 0 ] || MAX_DIFF_BYTES=60000
+          [ "$MAX_DIFF_BYTES" -le 100000 ] || MAX_DIFF_BYTES=100000
           # 锁文件、压缩产物、构建输出不送给模型，省 token
           EXCLUDES=(':(exclude,glob)**/*.lock' ':(exclude,glob)**/package-lock.json' ':(exclude,glob)**/pnpm-lock.yaml'
                     ':(exclude,glob)**/*.min.js' ':(exclude,glob)**/*.min.css' ':(exclude,glob)**/*.map'
@@ -116,19 +119,25 @@ jobs:
 
           DIFF_BYTES=$(wc -c < "$WORK_DIR/changes.diff")
 
-          # 覆盖是否完整：有被过滤的文件或 diff 被截断时，模型没看到全部改动，禁止自动合并
-          git diff --name-only "$RANGE_FROM" "$HEAD_SHA" | sort > "$WORK_DIR/all_files.txt"
-          git diff --name-only "$RANGE_FROM" "$HEAD_SHA" -- . "${EXCLUDES[@]}" | sort > "$WORK_DIR/reviewed_files.txt"
+          # 覆盖是否完整：按整个 PR（merge-base..HEAD）判断，而不只看本次增量。
+          # 否则一个全量评审被截断的大 PR，只要再推一个小提交走增量，就能绕过这道闸门。
+          git diff --name-only "$MERGE_BASE" "$HEAD_SHA" | sort > "$WORK_DIR/all_files.txt"
+          git diff --name-only "$MERGE_BASE" "$HEAD_SHA" -- . "${EXCLUDES[@]}" | sort > "$WORK_DIR/reviewed_files.txt"
           comm -23 "$WORK_DIR/all_files.txt" "$WORK_DIR/reviewed_files.txt" > "$WORK_DIR/skipped_files.txt"
+          FULL_BYTES=$(git diff "$MERGE_BASE" "$HEAD_SHA" -- . "${EXCLUDES[@]}" | wc -c)
           COMPLETE=true
           COVERAGE_NOTE=""
           if [ -s "$WORK_DIR/skipped_files.txt" ]; then
             COMPLETE=false
             COVERAGE_NOTE="有 $(wc -l < "$WORK_DIR/skipped_files.txt") 个锁文件 / 构建产物未送审"
           fi
-          if [ "$DIFF_BYTES" -gt "$MAX_DIFF_BYTES" ]; then
+          if [ "$DIFF_BYTES" -gt "$MAX_DIFF_BYTES" ] || [ "$FULL_BYTES" -gt "$MAX_DIFF_BYTES" ]; then
             COMPLETE=false
-            COVERAGE_NOTE="${COVERAGE_NOTE:+$COVERAGE_NOTE；}diff 超过 ${MAX_DIFF_BYTES} 字节被截断"
+            COVERAGE_NOTE="${COVERAGE_NOTE:+$COVERAGE_NOTE；}PR 的 diff 超过 ${MAX_DIFF_BYTES} 字节，无法完整评审"
+          fi
+          # 改动 CI 配置或评审规则的 PR 一律人工合并：pull_request 事件用的是 PR 里的工作流文件，PR 可以改写规则来放行自己
+          if git diff --name-only "$MERGE_BASE" "$HEAD_SHA" -- .github/workflows .github/ai-review | grep -q .; then
+            echo "touches_review_config=true" >> "$GITHUB_OUTPUT"
           fi
           echo "complete=$COMPLETE" >> "$GITHUB_OUTPUT"
           echo "coverage_note=$COVERAGE_NOTE" >> "$GITHUB_OUTPUT"
@@ -145,7 +154,7 @@ jobs:
             echo "## 附件 3：待评审的改动（${DIFF_BYTES} 字节）"
             if [ "$DIFF_BYTES" -gt "$MAX_DIFF_BYTES" ]; then
               echo "改动过大，下面只给出前 ${MAX_DIFF_BYTES} 字节；其余文件列表如下，重点抽查高风险文件，并在 Minor 中注明本次评审未完整覆盖。"
-              echo '````'; git diff --stat "$MERGE_BASE" "$HEAD_SHA" -- . "${EXCLUDES[@]}"; echo '````'
+              echo '````'; git diff --stat "$RANGE_FROM" "$HEAD_SHA" -- . "${EXCLUDES[@]}"; echo '````'
             fi
             echo '````diff'; head -c "$MAX_DIFF_BYTES" "$WORK_DIR/changes.diff"; echo; echo '````'
           } > "$WORK_DIR/prompt.md"
@@ -217,6 +226,7 @@ jobs:
         env:
           COMPLETE: ${{ steps.prompt.outputs.complete }}
           COVERAGE_NOTE: ${{ steps.prompt.outputs.coverage_note }}
+          TOUCHES_REVIEW_CONFIG: ${{ steps.prompt.outputs.touches_review_config }}
           STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
           PREFLIGHT_OK: ${{ steps.preflight.outputs.ok }}
           PREFLIGHT_REASON: ${{ steps.preflight.outputs.reason }}
@@ -237,14 +247,15 @@ jobs:
             fi
             exit 0
           fi
-          jq -r '.report' "$RESULT" > "$WORK_DIR/review.md"
+          # 评论正文上限 65536 字符，留出页脚余量
+          jq -r 'if (.report|length) > 60000 then .report[:60000] + "\n\n…（报告过长，已截断）" else .report end' "$RESULT" > "$WORK_DIR/review.md"
           CRITICAL=$(jq -r '.critical' "$RESULT")
           IMPORTANT=$(jq -r '.important' "$RESULT")
           CONCLUSION=$(jq -r '.conclusion' "$RESULT")
           echo "critical=$CRITICAL" >> "$GITHUB_OUTPUT"
           echo "important=$IMPORTANT" >> "$GITHUB_OUTPUT"
           echo "reviewed=true" >> "$GITHUB_OUTPUT"
-          # 四个条件全部满足才自动合并：无 Critical、无 Important、结论为可以合并、改动全部送审
+          # 全部满足才自动合并：无 Critical、无 Important、结论为可以合并、整个 PR 的改动全部送审、未改动 CI / 评审规则
           REASON=""
           if [ "$CRITICAL" -ne 0 ] || [ "$IMPORTANT" -ne 0 ]; then
             REASON="存在 Critical / Important"
@@ -252,6 +263,8 @@ jobs:
             REASON="问题计数为 0，但结论是「${CONCLUSION}」，两者不一致"
           elif [ "$COMPLETE" != "true" ]; then
             REASON="评审覆盖不完整：${COVERAGE_NOTE}，需人工确认后合并"
+          elif [ "$TOUCHES_REVIEW_CONFIG" = "true" ]; then
+            REASON="本 PR 修改了 .github/workflows 或 .github/ai-review（CI / 评审规则），需人工确认后合并"
           fi
           if [ -z "$REASON" ]; then
             echo "mergeable=true" >> "$GITHUB_OUTPUT"
@@ -263,6 +276,7 @@ jobs:
       - name: Post review comment
         if: ${{ !cancelled() && steps.verdict.outcome == 'success' }}
         env:
+          GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           REVIEW_MODE: ${{ steps.scope.outputs.mode }}
           MERGEABLE: ${{ steps.verdict.outputs.mergeable }}
@@ -297,6 +311,7 @@ jobs:
         id: merge
         if: steps.verdict.outputs.mergeable == 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
@@ -308,6 +323,7 @@ jobs:
         id: owner
         if: steps.merge.outcome == 'success'
         env:
+          GH_TOKEN: ${{ github.token }}
           OWNER_EMAIL: ${{ vars.REVIEW_REPORT_EMAIL }}
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           PR_TITLE: ${{ github.event.pull_request.title }}
