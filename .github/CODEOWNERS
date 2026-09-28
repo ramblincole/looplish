@@ -1,0 +1,4 @@
+# CI 与 AI 评审规则的改动必须由仓库所有者审批（需在 main 的分支保护中开启 "Require review from Code Owners"）
+/.github/workflows/ @ramblincole
+/.github/ai-review/ @ramblincole
+/.github/CODEOWNERS @ramblincole
