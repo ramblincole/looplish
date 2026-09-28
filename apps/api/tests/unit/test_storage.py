@@ -21,6 +21,7 @@ from looplish_api.domain.models import (
     Word,
 )
 from looplish_api.domain.ports import ArtifactStore, JobRepository
+from looplish_api.infrastructure.storage import json_job_repository
 from looplish_api.infrastructure.storage.file_artifact_store import FileArtifactStore
 from looplish_api.infrastructure.storage.json_job_repository import JsonJobRepository
 from looplish_api.infrastructure.storage.path_safety import ensure_within
@@ -418,3 +419,70 @@ def test_implementations_satisfy_domain_ports(tmp_path: Path) -> None:
 
     assert store.job_dir(JOB_ID).name == JOB_ID
     assert repository.list(JobQuery()) == JobPage((), None)
+
+
+def write_raw_job_file(root: Path, job_id: str, content: str) -> None:
+    (root / job_id).mkdir(parents=True, exist_ok=True)
+    (root / job_id / "job.json").write_text(content, encoding="utf-8")
+
+
+CORRUPT_JOB_FILES = {
+    "01JBROKEN0001": "{not json",
+    "01JBROKEN0002": json.dumps({"id": "01JBROKEN0002"}),
+    "01JBROKEN0003": json.dumps(
+        {**job_to_dict(Job.new("01JBROKEN0003", "s", "t", NOW)), "status": "paused"}
+    ),
+    "01JBROKEN0004": "[]",
+}
+
+
+def test_list_skips_unreadable_job_files(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    repository = JsonJobRepository(FileArtifactStore(tmp_path))
+    valid = Job.new(JOB_ID, "source", "title", NOW)
+    repository.save(valid)
+    for job_id, content in CORRUPT_JOB_FILES.items():
+        write_raw_job_file(tmp_path, job_id, content)
+
+    with caplog.at_level("WARNING", logger=json_job_repository.__name__):
+        page = repository.list(JobQuery())
+
+    assert page.items == (valid,)
+    assert len(caplog.records) == len(CORRUPT_JOB_FILES)
+    for job_id in CORRUPT_JOB_FILES:
+        assert any(job_id in record.getMessage() for record in caplog.records)
+
+
+def test_recover_interrupted_survives_unreadable_job_files(tmp_path: Path) -> None:
+    repository = JsonJobRepository(FileArtifactStore(tmp_path))
+    running = Job.new(JOB_ID, "source", "title", NOW).transition(JobStatus.RUNNING, NOW)
+    repository.save(running)
+    for job_id, content in CORRUPT_JOB_FILES.items():
+        write_raw_job_file(tmp_path, job_id, content)
+
+    assert repository.recover_interrupted() == 1
+
+    recovered = repository.get(JOB_ID)
+    assert recovered is not None
+    assert recovered.status is JobStatus.FAILED
+    # 坏文件保持原样，留给人工排查。
+    for job_id, content in CORRUPT_JOB_FILES.items():
+        assert (tmp_path / job_id / "job.json").read_text(encoding="utf-8") == content
+
+
+def test_recover_interrupted_reads_each_job_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = JsonJobRepository(FileArtifactStore(tmp_path))
+    for index in range(450):
+        repository.save(Job.new(f"01JOB{index:08d}", "source", "title", NOW))
+    parsed: list[str] = []
+    real_job_from_dict = json_job_repository.job_from_dict
+
+    def counting_job_from_dict(value: dict[str, object]) -> Job:
+        parsed.append(str(value["id"]))
+        return real_job_from_dict(value)
+
+    monkeypatch.setattr(json_job_repository, "job_from_dict", counting_job_from_dict)
+
+    assert repository.recover_interrupted() == 450
+    assert len(parsed) == 450

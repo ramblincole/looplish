@@ -1,4 +1,6 @@
 import json
+import logging
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime
 from threading import RLock
@@ -6,6 +8,8 @@ from threading import RLock
 from looplish_api.domain.models import Job, JobPage, JobQuery, JobStatus, Problem
 from looplish_api.infrastructure.storage.file_artifact_store import FileArtifactStore
 from looplish_api.infrastructure.storage.serde import job_from_dict, job_to_dict
+
+logger = logging.getLogger(__name__)
 
 
 class JsonJobRepository:
@@ -26,11 +30,11 @@ class JsonJobRepository:
 
     def list(self, query: JobQuery) -> JobPage:
         with self._lock:
-            jobs = []
-            for path in self.store.root.glob("*/job.json"):
-                job = job_from_dict(json.loads(path.read_text(encoding="utf-8")))
-                if query.status is None or job.status is query.status:
-                    jobs.append(job)
+            jobs = [
+                job
+                for job in self._load_all()
+                if query.status is None or job.status is query.status
+            ]
             # 用 id 作为同时间戳的稳定次级排序键，确保 cursor 翻页可重现。
             jobs.sort(key=lambda item: (item.created_at, item.id), reverse=True)
             if query.cursor:
@@ -53,11 +57,9 @@ class JsonJobRepository:
 
     def recover_interrupted(self) -> int:
         recovered = 0
-        cursor = None
-        # 分页遍历全部历史任务，不能只恢复第一页。
-        while True:
-            page = self.list(JobQuery(limit=200, cursor=cursor))
-            for job in page.items:
+        with self._lock:
+            # 一次遍历全部任务文件；借用分页会让每页都重读整个目录。
+            for job in tuple(self._load_all()):
                 if job.status not in {JobStatus.QUEUED, JobStatus.RUNNING}:
                     continue
                 failed = replace(
@@ -70,7 +72,12 @@ class JsonJobRepository:
                 )
                 self.save(failed)
                 recovered += 1
-            if page.next_cursor is None:
-                break
-            cursor = page.next_cursor
         return recovered
+
+    def _load_all(self) -> Iterator[Job]:
+        for path in self.store.root.glob("*/job.json"):
+            try:
+                yield job_from_dict(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                # 单个坏文件不能拖垮列表和启动恢复；跳过并留下排查线索。
+                logger.warning("skipping unreadable job file %s: %s", path, error)

@@ -188,6 +188,10 @@ class JobQuery:
     limit: int = 50
     cursor: str | None = None
 
+    def __post_init__(self) -> None:
+        if self.limit < 1:
+            raise ValueError("limit must be positive")
+
 
 @dataclass(frozen=True, slots=True)
 class JobPage:
