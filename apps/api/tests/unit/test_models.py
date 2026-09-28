@@ -6,6 +6,7 @@ import pytest
 from looplish_api.domain.errors import DomainError, InvalidJobOptions, JobNotFound
 from looplish_api.domain.models import (
     Job,
+    JobQuery,
     JobResult,
     JobStage,
     JobStatus,
@@ -212,3 +213,13 @@ def test_domain_errors_expose_stable_code_and_status() -> None:
         422,
     )
     assert str(invalid) == "INVALID_JOB_OPTIONS: bad model"
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+def test_job_query_requires_positive_limit(limit: int) -> None:
+    with pytest.raises(ValueError, match="limit must be positive"):
+        JobQuery(limit=limit)
+
+
+def test_job_query_accepts_minimum_limit() -> None:
+    assert JobQuery(limit=1).limit == 1
