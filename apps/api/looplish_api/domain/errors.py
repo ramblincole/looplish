@@ -59,3 +59,20 @@ class ServiceStopping(DomainError):
 class UploadTooLarge(DomainError):
     def __init__(self) -> None:
         super().__init__("UPLOAD_TOO_LARGE", "上传文件超过大小上限。", 413)
+
+
+class LocalPathsDisabled(DomainError):
+    def __init__(self) -> None:
+        super().__init__(
+            "LOCAL_PATHS_DISABLED", "此服务未开放本机文件路径，请改用上传或 URL。", 403
+        )
+
+
+class ArtifactNotFound(DomainError):
+    def __init__(self) -> None:
+        super().__init__("ARTIFACT_NOT_FOUND", "没有找到请求的任务产物。", 404)
+
+
+class SentenceNotFound(DomainError):
+    def __init__(self) -> None:
+        super().__init__("SENTENCE_NOT_FOUND", "句子序号超出范围。", 404)

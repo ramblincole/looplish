@@ -154,3 +154,36 @@ def test_job_options_do_not_carry_secret(tmp_path: Path) -> None:
     )
 
     assert "test-secret-value" not in repr(settings.default_job_options())
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("127.0.0.1", True),
+        ("127.8.8.8", True),
+        ("localhost", True),
+        ("::1", True),
+        ("[::1]", True),
+        ("0.0.0.0", False),
+        ("::", False),
+        ("192.168.1.20", False),
+        ("looplish.example", False),
+    ],
+)
+def test_local_paths_follow_loopback_by_default(tmp_path: Path, host: str, expected: bool) -> None:
+    settings = Settings(_env_file=None, data_dir=tmp_path / "jobs", host=host)
+
+    assert settings.listens_on_loopback is expected
+    assert settings.local_paths_enabled is expected
+
+
+@pytest.mark.parametrize("value", ["true", "false"])
+def test_local_paths_switch_overrides_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("LOOPLISH_ALLOW_LOCAL_PATHS", value)
+    monkeypatch.setenv("LOOPLISH_HOST", "0.0.0.0" if value == "true" else "127.0.0.1")
+
+    settings = Settings(_env_file=None, data_dir=tmp_path / "jobs")
+
+    assert settings.local_paths_enabled is (value == "true")

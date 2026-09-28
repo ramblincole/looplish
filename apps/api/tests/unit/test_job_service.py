@@ -429,3 +429,70 @@ def test_configure_logging_writes_jsonl(tmp_path: Path) -> None:
 
     assert json.loads(lines[-1])["event"] == "test.event"
     assert "ignored text" not in lines[-1]
+
+
+def test_disabled_local_paths_reject_without_touching_filesystem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from looplish_api.domain.errors import LocalPathsDisabled
+
+    svc, _ = service(tmp_path)
+    svc.allow_local_paths = False
+    media = tmp_path / "lesson.mp4"
+    media.write_bytes(b"media")
+    touched: list[object] = []
+    monkeypatch.setattr(Path, "is_file", lambda self: touched.append(self) or True)
+
+    for source in (str(media), str(tmp_path / "missing.mp4")):
+        with pytest.raises(LocalPathsDisabled):
+            svc.create_from_source(CreateJobCommand(source, options()))
+
+    assert touched == []
+    assert svc.create_from_source(CreateJobCommand(URL, options())).status is JobStatus.QUEUED
+
+
+@pytest.mark.parametrize("operation", ["bundle", "clip"])
+def test_artifacts_use_result_read_inside_the_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    # 模拟重切句恰好发生在「读取结果」与「生成产物」之间：取锁的瞬间完成一次重切句。
+    svc, h, job = succeeded_job(tmp_path)
+    fresh = SegmentationOptions(lead_pad=0.0, tail_pad=0.0)
+
+    class ResegmentOnAcquire:
+        def __init__(self, inner: Any) -> None:
+            self.inner = inner
+            self.fired = False
+
+        def __enter__(self) -> None:
+            self.inner.__enter__()
+            if not self.fired:
+                self.fired = True
+                svc.resegment(job.id, ResegmentCommand(fresh))
+
+        def __exit__(self, *args: object) -> None:
+            self.inner.__exit__(*args)
+
+    monkeypatch.setattr(svc, "_artifact_lock", ResegmentOnAcquire(svc._artifact_lock))
+
+    if operation == "bundle":
+        used, _ = svc.bundle_file(job.id, include_clips=True)
+    else:
+        used, _ = svc.clip_file(job.id, 0)
+
+    latest = svc.get_result(job.id)
+    assert used == latest
+    assert all(item.start == item.speech_start for item in used.sentences)
+    srt = h.store.artifact_path(job.id, "subtitles.srt").read_text(encoding="utf-8")
+    assert srt.count("-->") == len(latest.sentences)
+
+
+def test_clip_index_is_checked_against_latest_result(tmp_path: Path) -> None:
+    svc, h, job = succeeded_job(tmp_path)
+    current = svc.get_result(job.id)
+    h.store.write_result(job.id, replace(current, sentences=current.sentences[:1]))
+
+    from looplish_api.domain.errors import SentenceNotFound
+
+    with pytest.raises(SentenceNotFound):
+        svc.clip_file(job.id, 1)
