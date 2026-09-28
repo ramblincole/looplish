@@ -228,14 +228,16 @@ class JobService:
         return result, self._existing(job_id, name)
 
     def clip_file(self, job_id: str, index: int) -> tuple[JobResult, Path]:
-        result = self.get_result(job_id)
-        if not 0 <= index < len(result.sentences):
-            raise SentenceNotFound()
+        # 读取结果、检查序号和生成切片在同一个临界区内完成：重切句不能插在中间，
+        # 否则会按旧句子边界写出切片缓存。
         with self._artifact_lock:
-            # 切片按需生成并缓存；与重切句互斥，不会按旧句子边界写出切片。
+            result = self.get_result(job_id)
+            if not 0 <= index < len(result.sentences):
+                raise SentenceNotFound()
             return result, self.exporter.ensure_clip(result, index)
 
     def bundle_file(self, job_id: str, include_clips: bool) -> tuple[JobResult, Path]:
-        result = self.get_result(job_id)
+        # 同上：打包会重写字幕文件，必须基于锁内读到的最新结果，不能把重切句的成果改回去。
         with self._artifact_lock:
+            result = self.get_result(job_id)
             return result, self.exporter.build_bundle(result, include_clips)
