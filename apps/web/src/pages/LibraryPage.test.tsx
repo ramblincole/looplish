@@ -1,0 +1,512 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { createMemoryRouter, RouterProvider } from "react-router";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Job, RuntimeConfig } from "../api/types";
+import { routes } from "../app/router";
+import {
+  ACTIVE_POLL_MS,
+  HIDDEN_POLL_MS,
+  MAX_BACKOFF_MS,
+  pollInterval
+} from "../features/jobs/useJobs";
+import { installFetchBridge, multipartFields } from "../test/fetchBridge";
+
+const CONFIG: RuntimeConfig = {
+  asrBackends: ["local"],
+  allowLocalPaths: true,
+  defaults: {
+    asrBackend: "local",
+    asrModel: "small.en",
+    language: "en",
+    subtitleSource: "auto",
+    minDuration: 1,
+    maxDuration: 14,
+    hardPause: 0.75,
+    leadPad: 0.2,
+    tailPad: 0.4
+  }
+};
+
+function job(overrides: Partial<Job> = {}): Job {
+  return {
+    id: "0123456789ABCDEF",
+    source: "https://example.test/v",
+    title: "Everyday Talk",
+    status: "succeeded",
+    stage: null,
+    progress: 1,
+    message: "处理完成",
+    error: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    sentenceCount: 24,
+    ...overrides
+  };
+}
+
+type State = {
+  config: RuntimeConfig;
+  configGate: Promise<void> | null;
+  pages: Job[][];
+  jobsStatus: number;
+  requests: { jobs: number; created: unknown[]; uploads: string[]; deleted: string[] };
+  createError: Record<string, unknown> | null;
+};
+
+let state: State;
+
+function freshState(): State {
+  return {
+    config: CONFIG,
+    configGate: null,
+    pages: [[]],
+    jobsStatus: 200,
+    requests: { jobs: 0, created: [], uploads: [], deleted: [] },
+    createError: null
+  };
+}
+
+const problem = (status: number, code: string, detail: string) =>
+  HttpResponse.json(
+    { type: "about:blank", title: code, status, code, detail, requestId: "req_1" },
+    { status, headers: { "Content-Type": "application/problem+json" } }
+  );
+
+const server = setupServer(
+  http.get("*/api/v1/config", async () => {
+    if (state.configGate) await state.configGate;
+    return HttpResponse.json(state.config);
+  }),
+  http.get("*/api/v1/jobs", () => {
+    state.requests.jobs += 1;
+    if (state.jobsStatus !== 200)
+      return problem(state.jobsStatus, "INTERNAL_ERROR", "服务内部错误。");
+    // 依次返回预设的列表快照，最后一个快照一直重复。
+    const items = state.pages.length > 1 ? state.pages.shift()! : state.pages[0];
+    return HttpResponse.json({ items, nextCursor: null });
+  }),
+  http.post("*/api/v1/jobs", async ({ request }) => {
+    state.requests.created.push(await request.json());
+    if (state.createError) {
+      const { status, code, detail } = state.createError as {
+        status: number;
+        code: string;
+        detail: string;
+      };
+      return problem(status, code, detail);
+    }
+    return HttpResponse.json(job({ status: "queued", progress: 0 }), { status: 202 });
+  }),
+  http.post("*/api/v1/jobs/upload", async ({ request }) => {
+    state.requests.uploads.push(`${request.headers.get("content-type")}\n${await request.text()}`);
+    return HttpResponse.json(job({ status: "queued", progress: 0 }), { status: 202 });
+  }),
+  http.delete("*/api/v1/jobs/:id", ({ params }) => {
+    state.requests.deleted.push(String(params.id));
+    return new HttpResponse(null, { status: 204 });
+  })
+);
+
+let restoreFetch: () => void;
+
+beforeAll(async () => {
+  server.listen({ onUnhandledRequest: "error" });
+  // jsdom 的 FormData/AbortSignal 与 Node fetch 不兼容，在 MSW 之外包一层转换。
+  restoreFetch = await installFetchBridge();
+});
+
+beforeEach(() => {
+  state = freshState();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  server.resetHandlers();
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+});
+
+afterAll(() => {
+  restoreFetch();
+  server.close();
+});
+
+function renderLibrary(
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+) {
+  const router = createMemoryRouter(routes, { initialEntries: ["/"] });
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  );
+  return { router, client };
+}
+
+async function ready() {
+  return screen.findByRole("button", { name: "开始处理" });
+}
+
+async function setNumber(user: ReturnType<typeof userEvent.setup>, label: RegExp, value: string) {
+  const input = screen.getByLabelText(label);
+  await user.clear(input);
+  if (value) await user.type(input, value);
+}
+
+describe("submission", () => {
+  it("keeps both entries unavailable until the runtime config arrives", async () => {
+    let release!: () => void;
+    state.configGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    renderLibrary();
+
+    expect(await screen.findByRole("status")).toHaveTextContent("正在加载运行配置");
+    expect(screen.queryByRole("button", { name: "开始处理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "上传并处理" })).not.toBeInTheDocument();
+
+    release();
+
+    expect(await ready()).toBeEnabled();
+  });
+
+  it("submits a URL with the complete shared options", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await setNumber(user, /最长句长/, "10");
+    await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "https://example.test/v");
+    await user.click(screen.getByRole("button", { name: "开始处理" }));
+
+    await screen.findByText("已加入处理队列。");
+    expect(state.requests.created).toEqual([
+      {
+        source: "https://example.test/v",
+        asrBackend: "local",
+        subtitleSource: "auto",
+        language: "en",
+        makeClips: false,
+        minDuration: 1,
+        maxDuration: 10,
+        hardPause: 0.75,
+        leadPad: 0.2,
+        tailPad: 0.4
+      }
+    ]);
+    expect(screen.getByLabelText("视频链接或本机媒体路径")).toHaveValue("");
+  });
+
+  it("uploads a file only after the explicit button, as multipart strings", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await user.clear(screen.getByLabelText("语言"));
+    await user.click(screen.getByLabelText("预先生成全部单句音频"));
+    await setNumber(user, /最长句长/, "10");
+    await user.upload(
+      screen.getByLabelText("选择媒体文件"),
+      new File(["RIFF"], "talk.wav", { type: "audio/wav" })
+    );
+
+    expect(screen.getByText("已选择：talk.wav")).toBeInTheDocument();
+    expect(state.requests.uploads).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "上传并处理" }));
+
+    await screen.findByText("已上传并加入处理队列。");
+    const [raw] = state.requests.uploads;
+    expect(raw).toMatch(/^multipart\/form-data; boundary=/);
+    expect(multipartFields(raw)).toEqual({
+      file: "talk.wav",
+      asrBackend: "local",
+      subtitleSource: "auto",
+      language: "auto",
+      makeClips: "true",
+      minDuration: "1",
+      maxDuration: "10",
+      hardPause: "0.75",
+      leadPad: "0.2",
+      tailPad: "0.4"
+    });
+  });
+
+  it("uses the same options for both entries", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+    await user.selectOptions(screen.getByLabelText("字幕来源"), "asr");
+    await setNumber(user, /强制断句停顿/, "1.5");
+
+    await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "https://example.test/v");
+    await user.click(screen.getByRole("button", { name: "开始处理" }));
+    await user.upload(
+      screen.getByLabelText("选择媒体文件"),
+      new File(["x"], "a.mp3", { type: "audio/mpeg" })
+    );
+    await user.click(screen.getByRole("button", { name: "上传并处理" }));
+    await screen.findByText("已上传并加入处理队列。");
+
+    const json = state.requests.created[0] as Record<string, unknown>;
+    const form = multipartFields(state.requests.uploads[0]);
+    expect(json.subtitleSource).toBe(form.subtitleSource);
+    expect(String(json.hardPause)).toBe(form.hardPause);
+    expect(form.subtitleSource).toBe("asr");
+  });
+
+  it("accepts a dropped file", async () => {
+    renderLibrary();
+    await ready();
+    const zone = screen.getByText("或把文件拖到这里").closest("div")!;
+
+    fireEvent.drop(zone, {
+      dataTransfer: { files: [new File(["x"], "dropped.mp4", { type: "video/mp4" })] }
+    });
+
+    expect(screen.getByText("已选择：dropped.mp4")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传并处理" })).toBeEnabled();
+  });
+
+  it("warns about files that do not look like media without blocking them", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    renderLibrary();
+    await ready();
+
+    await user.upload(
+      screen.getByLabelText("选择媒体文件"),
+      new File(["x"], "notes.pdf", { type: "application/pdf" })
+    );
+
+    expect(screen.getByText(/看起来不是音视频/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上传并处理" })).toBeEnabled();
+  });
+
+  it("lets keyboard users reach the file picker", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+    const picker = screen.getByLabelText("选择媒体文件");
+
+    for (let step = 0; step < 30 && document.activeElement !== picker; step += 1) {
+      await user.tab();
+    }
+
+    expect(picker).toHaveFocus();
+  });
+
+  it("blocks out-of-range numbers with the same limits as the server", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await setNumber(user, /最短句长/, "12");
+    expect(screen.getByRole("alert")).toHaveTextContent("最短句长需在 0.2 到 10 秒之间。");
+    expect(screen.getByRole("button", { name: "开始处理" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "上传并处理" })).toBeDisabled();
+    expect(screen.getByLabelText(/最短句长/)).toHaveAttribute("aria-invalid", "true");
+
+    await setNumber(user, /最短句长/, "8");
+    await setNumber(user, /最长句长/, "8");
+    expect(screen.getByRole("alert")).toHaveTextContent("最短句长必须小于最长句长。");
+
+    await setNumber(user, /最长句长/, "");
+    expect(screen.getByRole("alert")).toHaveTextContent("最长句长需要填写数字。");
+  });
+
+  it("shows the server's problem detail when creation fails", async () => {
+    state.createError = {
+      status: 403,
+      code: "LOCAL_PATHS_DISABLED",
+      detail: "此服务未开放本机文件路径。"
+    };
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "C:/media/talk.mp4");
+    await user.click(screen.getByRole("button", { name: "开始处理" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("此服务未开放本机文件路径。");
+  });
+
+  it("only offers links when the server disables local paths", async () => {
+    state.config = { ...CONFIG, allowLocalPaths: false };
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await user.type(screen.getByLabelText("视频链接"), "C:/media/talk.mp4");
+    await user.click(screen.getByRole("button", { name: "开始处理" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("只接受 http(s) 链接");
+    expect(state.requests.created).toEqual([]);
+  });
+
+  it("offers only the backends the server reports", async () => {
+    renderLibrary();
+    await ready();
+
+    const options = screen.getByLabelText("识别后端").querySelectorAll("option");
+    expect([...options].map((option) => option.value)).toEqual(["local"]);
+  });
+});
+
+describe("job list", () => {
+  it("shows status, accessible progress, failures and delete rules", async () => {
+    state.pages = [
+      [
+        job({
+          id: "AAAAAAAAAAAAAAAA",
+          title: "Running Talk",
+          status: "running",
+          stage: "transcribing",
+          progress: 0.5,
+          message: "识别中",
+          sentenceCount: 0
+        }),
+        job({
+          id: "BBBBBBBBBBBBBBBB",
+          title: "Broken Talk",
+          status: "failed",
+          progress: 0.3,
+          message: "处理失败",
+          error: { code: "SUBTITLE_NOT_AVAILABLE", detail: "没有可用的人工字幕。" },
+          sentenceCount: 0
+        }),
+        job({ id: "CCCCCCCCCCCCCCCC", title: "Done Talk" })
+      ]
+    ];
+    renderLibrary();
+
+    const progress = await screen.findByRole("progressbar", { name: "Running Talk 处理进度" });
+    expect(progress).toHaveAttribute("value", "0.5");
+    expect(progress).toHaveAttribute("aria-valuetext", "50%");
+    expect(screen.getByText("处理中")).toBeInTheDocument();
+    expect(screen.getByText("（转写）")).toBeInTheDocument();
+    expect(screen.getByText("失败原因：没有可用的人工字幕。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除 Running Talk" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "删除 Broken Talk" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Done Talk" })).toHaveAttribute(
+      "href",
+      "/jobs/CCCCCCCCCCCCCCCC"
+    );
+    expect(screen.queryByRole("link", { name: "Running Talk" })).not.toBeInTheDocument();
+  });
+
+  it("opens the practice page for a succeeded job", async () => {
+    state.pages = [[job()]];
+    const user = userEvent.setup();
+    const { router } = renderLibrary();
+
+    await user.click(await screen.findByRole("link", { name: "Everyday Talk" }));
+
+    expect(await screen.findByText("练习台将在下一个任务完成。")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/jobs/0123456789ABCDEF");
+  });
+
+  it("deletes only after confirmation", async () => {
+    state.pages = [[job()]];
+    const confirm = vi
+      .spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    const user = userEvent.setup();
+    renderLibrary();
+    const button = await screen.findByRole("button", { name: "删除 Everyday Talk" });
+
+    await user.click(button);
+    expect(state.requests.deleted).toEqual([]);
+
+    await user.click(button);
+    await waitFor(() => expect(state.requests.deleted).toEqual(["0123456789ABCDEF"]));
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows one persistent alert when the list cannot load", async () => {
+    state.jobsStatus = 500;
+    renderLibrary();
+
+    expect(await screen.findByText("暂时无法加载任务，请稍后刷新。")).toBeInTheDocument();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+});
+
+describe("polling", () => {
+  it("polls every second while jobs are active and stops once they finish", async () => {
+    state.pages = [
+      [job({ status: "running", progress: 0.2 })],
+      [job({ status: "running", progress: 0.6 })],
+      [job({ status: "succeeded" })]
+    ];
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(["jobResult", "0123456789ABCDEF"], { stale: true });
+    renderLibrary(client);
+
+    await screen.findByText("20%");
+    expect(state.requests.jobs).toBe(1);
+
+    await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
+    await screen.findByText("60%");
+    expect(state.requests.jobs).toBe(2);
+
+    await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
+    await screen.findByText("已完成");
+    expect(state.requests.jobs).toBe(3);
+
+    await act(() => vi.advanceTimersByTimeAsync(10 * ACTIVE_POLL_MS));
+    expect(state.requests.jobs).toBe(3);
+    // 任务进入终态时，其结果缓存被标记为失效，练习台会重新读取。
+    expect(client.getQueryState(["jobResult", "0123456789ABCDEF"])?.isInvalidated).toBe(true);
+  });
+
+  it("slows to five seconds while the tab is hidden", async () => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    state.pages = [[job({ status: "queued", progress: 0 })]];
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    renderLibrary();
+
+    await screen.findByText("排队中");
+    expect(state.requests.jobs).toBe(1);
+
+    await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
+    expect(state.requests.jobs).toBe(1);
+
+    await act(() => vi.advanceTimersByTimeAsync(HIDDEN_POLL_MS - ACTIVE_POLL_MS));
+    await waitFor(() => expect(state.requests.jobs).toBe(2));
+  });
+
+  it("does not poll when no job is active", async () => {
+    state.pages = [[job()]];
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    renderLibrary();
+
+    await screen.findByText("已完成");
+    await act(() => vi.advanceTimersByTimeAsync(10 * ACTIVE_POLL_MS));
+
+    expect(state.requests.jobs).toBe(1);
+  });
+});
+
+describe("pollInterval", () => {
+  const page = (status: Job["status"]) => ({ items: [job({ status })], nextCursor: null });
+
+  it("stops without active jobs", () => {
+    expect(pollInterval(undefined, 0, false)).toBe(false);
+    expect(pollInterval(page("succeeded"), 0, false)).toBe(false);
+    expect(pollInterval(page("failed"), 3, false)).toBe(false);
+  });
+
+  it("uses visibility-dependent intervals with bounded exponential backoff", () => {
+    expect(pollInterval(page("running"), 0, false)).toBe(ACTIVE_POLL_MS);
+    expect(pollInterval(page("queued"), 0, true)).toBe(HIDDEN_POLL_MS);
+    expect(pollInterval(page("running"), 1, false)).toBe(2 * ACTIVE_POLL_MS);
+    expect(pollInterval(page("running"), 3, false)).toBe(8 * ACTIVE_POLL_MS);
+    expect(pollInterval(page("running"), 20, false)).toBe(MAX_BACKOFF_MS);
+  });
+});
