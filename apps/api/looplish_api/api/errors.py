@@ -47,10 +47,23 @@ def _host_name(value: str) -> str:
     return (urlsplit(f"//{value}").hostname or "").lower()
 
 
+def allowed_origins(web_origin: str) -> set[str]:
+    parts = urlsplit(web_origin.rstrip("/").lower())
+    origins = {f"{parts.scheme}://{parts.netloc}"}
+    # 配置的前端本身在本机时，127.0.0.1、localhost 与 [::1] 是同一个来源的不同写法；
+    # 端口和协议仍须一致，本机其他端口上的服务照样被拒。
+    if (parts.hostname or "") in LOOPBACK_HOSTS:
+        port = f":{parts.port}" if parts.port else ""
+        origins |= {
+            f"{parts.scheme}://{name}{port}" for name in ("127.0.0.1", "localhost", "[::1]")
+        }
+    return origins
+
+
 def install_request_guards(
     app: FastAPI, web_origin: str, loopback_only: bool, max_upload_bytes: int
 ) -> None:
-    allowed_origin = web_origin.rstrip("/").lower()
+    trusted_origins = allowed_origins(web_origin)
     allowed_hosts = LOOPBACK_HOSTS | {_host_name(urlsplit(web_origin).netloc)}
 
     @app.middleware("http")
@@ -65,7 +78,7 @@ def install_request_guards(
             # 本机静态站点与 API 同源：Origin 的主机和端口与请求的 Host 完全一致。
             same_origin = urlsplit(origin).netloc == request.headers.get("host", "").lower()
             # multipart 上传属于浏览器「简单请求」，不经 CORS 预检；其他网站发起的写操作一律拒绝。
-            if origin != allowed_origin and not same_origin:
+            if origin not in trusted_origins and not same_origin:
                 return problem(request, 403, "ORIGIN_NOT_ALLOWED", "不接受来自该来源的请求。")
         if request.url.path == "/api/v1/jobs/upload" and request.method == "POST":
             length = request.headers.get("content-length")

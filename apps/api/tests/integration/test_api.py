@@ -865,3 +865,44 @@ def test_main_module_imports_with_process_environment(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "True"
     assert (tmp_path / "jobs").is_dir() and (tmp_path / "logs" / "looplish.jsonl").exists()
+
+
+@pytest.mark.parametrize(
+    ("origin", "status"),
+    [
+        # Vite 代理会把 Host 改写成 API 地址；用 localhost 打开前端时也必须能提交。
+        ("http://localhost:5173", 202),
+        ("http://[::1]:5173", 202),
+        ("http://localhost:9999", 403),
+        ("https://localhost:5173", 403),
+    ],
+)
+def test_loopback_origin_spellings_are_equivalent(
+    client: TestClient, origin: str, status: int
+) -> None:
+    response = client.post(
+        "/api/v1/jobs", json={"source": "https://x.test/v"}, headers={"Origin": origin}
+    )
+
+    assert response.status_code == status
+
+
+def test_loopback_equivalence_only_applies_to_a_loopback_web_origin(tmp_path: Path) -> None:
+    config = settings(tmp_path, web_origin="https://looplish.example")
+    client = TestClient(create_app(make_container(config)), base_url=BASE_URL)
+
+    problem(
+        client.post(
+            "/api/v1/jobs",
+            json={"source": "https://x.test/v"},
+            headers={"Origin": "http://localhost:5173"},
+        ),
+        403,
+        "ORIGIN_NOT_ALLOWED",
+    )
+    allowed = client.post(
+        "/api/v1/jobs",
+        json={"source": "https://x.test/v"},
+        headers={"Origin": "https://looplish.example"},
+    )
+    assert allowed.status_code == 202
