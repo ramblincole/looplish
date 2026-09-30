@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { api } from "../../api/client";
-import type { CreateJobRequest, Job, JobPage } from "../../api/types";
+import { ApiProblem, api } from "../../api/client";
+import type { CreateJobRequest, Job, JobPage, ResegmentRequest } from "../../api/types";
 
 export const ACTIVE_POLL_MS = 1000;
 export const HIDDEN_POLL_MS = 5000;
@@ -18,6 +18,20 @@ export function pollInterval(
 ): number | false {
   // 只有仍在处理的任务才需要轮询；全部进入终态后立即停表。
   if (!data?.items.some((job) => isActive(job.status))) return false;
+  return backoffInterval(failures, hidden);
+}
+
+export function jobPollInterval(
+  job: Job | undefined,
+  failures: number,
+  hidden: boolean
+): number | false {
+  // 单个任务的轮询规则与列表一致：只在排队或处理中时刷新。
+  if (!job || !isActive(job.status)) return false;
+  return backoffInterval(failures, hidden);
+}
+
+function backoffInterval(failures: number, hidden: boolean): number {
   // 后台标签降低请求频率，回到前台时由 refetchOnWindowFocus 主动刷新。
   const base = hidden ? HIDDEN_POLL_MS : ACTIVE_POLL_MS;
   // 连续失败时按指数退避放慢轮询，恢复成功后 failures 归零。
@@ -87,6 +101,68 @@ export function useDeleteJob() {
       client.removeQueries({ queryKey: ["job", jobId] });
       client.removeQueries({ queryKey: ["jobResult", jobId] });
       return client.invalidateQueries({ queryKey: ["jobs"] });
+    }
+  });
+}
+
+/** 4xx（任务不存在、结果尚未就绪等）重试也不会变好，立即展示；其余错误有限重试。 */
+export function retryUnlessClientError(failureCount: number, error: unknown): boolean {
+  if (error instanceof ApiProblem && error.problem.status < 500) return false;
+  return failureCount < 2;
+}
+
+export function useJob(jobId: string) {
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: ["job", jobId],
+    queryFn: ({ signal }) => api.getJob(jobId, signal),
+    retry: retryUnlessClientError,
+    refetchInterval: (current) =>
+      jobPollInterval(
+        current.state.data,
+        current.state.fetchFailureCount,
+        document.visibilityState === "hidden"
+      ),
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true
+  });
+
+  // 任务在本页进入终态时，素材库列表中的状态与句子数也随之过期。
+  const previous = useRef<Job["status"] | undefined>(undefined);
+  const status = query.data?.status;
+  useEffect(() => {
+    if (status === undefined) return;
+    if (previous.current !== undefined && isActive(previous.current) && !isActive(status)) {
+      void client.invalidateQueries({ queryKey: ["jobs"] });
+    }
+    previous.current = status;
+  }, [status, client]);
+
+  return query;
+}
+
+export function useJobResult(jobId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["jobResult", jobId],
+    queryFn: ({ signal }) => api.getResult(jobId, signal),
+    retry: retryUnlessClientError,
+    // 结果只在任务成功后存在；未完成时请求只会得到 409，因此由调用方按状态开启。
+    enabled,
+    // 结果只会因重新切句而改变，而那条路径会直接写入缓存，无需后台反复刷新。
+    staleTime: Infinity
+  });
+}
+
+export function useResegment(jobId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ResegmentRequest) => api.resegment(jobId, body),
+    onSuccess: (result) => {
+      // 响应就是完整的新结果：直接写入缓存，避免练习台短暂显示旧句子。
+      client.setQueryData(["jobResult", jobId], result);
+      // 句子数与消息保存在 Job 上，交给服务端重新读取。
+      void client.invalidateQueries({ queryKey: ["job", jobId] });
+      void client.invalidateQueries({ queryKey: ["jobs"] });
     }
   });
 }

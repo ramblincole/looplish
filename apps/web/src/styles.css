@@ -167,6 +167,255 @@ table.jobs td {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- 练习台 ---------- */
+
+main.practice {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.back-link {
+  color: var(--accent);
+}
+
+.practice-header h1 {
+  margin: 0.5rem 0 0;
+}
+
+.uploader {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  margin: 1rem 0;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--accent);
+}
+
+.export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.export-label {
+  color: var(--muted);
+}
+
+.export ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(14rem, 20rem) 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 48rem) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.reel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.reel-summary {
+  margin: 0.25rem 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.reel ol {
+  max-height: 60vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.reel-item {
+  display: flex;
+  width: 100%;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-left: 4px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+/* 当前句同时用左边框、背景和粗体表达，不只依赖颜色 */
+.reel-item--current {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-weight: 600;
+}
+
+.reel-index {
+  min-width: 2ch;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.reel-text {
+  flex: 1;
+}
+
+.reel-visited {
+  color: var(--success);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.stage h2 {
+  margin-top: 0;
+}
+
+.transcript-text {
+  min-height: 3.5rem;
+  font-size: 1.5rem;
+  line-height: 2;
+}
+
+.word {
+  border-radius: 0.2rem;
+}
+
+/* 当前词用背景、下划线两种差异表达；不改字重，避免高亮移动时文字重排 */
+.word--active {
+  background: color-mix(in srgb, var(--focus) 35%, transparent);
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 0.2em;
+}
+
+/* inline span 的 inline-size 不生效，遮罩块必须是 inline-block 才能按词长占位 */
+.word--veiled {
+  display: inline-block;
+  height: 1em;
+  margin-inline-end: 0.5ch;
+  vertical-align: middle;
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.transport {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.primary-action {
+  min-width: 6rem;
+}
+
+.play-status {
+  margin: 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: end;
+}
+
+.settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.settings label.checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+.hotkey-hint {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialog {
+  width: min(32rem, 100%);
+  padding: 1.25rem;
+  border-radius: 0.5rem;
+  background: Canvas;
+  color: CanvasText;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 30%);
+}
+
+.dialog h2 {
+  margin-top: 0;
+}
+
+.dialog-hint {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.dialog-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.75rem;
+}
+
+.dialog-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

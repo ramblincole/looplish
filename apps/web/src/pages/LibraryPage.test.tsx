@@ -400,12 +400,43 @@ describe("job list", () => {
 
   it("opens the practice page for a succeeded job", async () => {
     state.pages = [[job()]];
+    server.use(
+      http.get("*/api/v1/jobs/:id", () => HttpResponse.json(job())),
+      http.get("*/api/v1/jobs/:id/result", () =>
+        HttpResponse.json({
+          jobId: "0123456789ABCDEF",
+          title: "Everyday Talk",
+          sourceUrl: null,
+          uploader: null,
+          thumbnailUrl: null,
+          duration: 2,
+          language: "en",
+          transcriptSource: "asr:fake:fake",
+          audioUrl: "/api/v1/jobs/0123456789ABCDEF/audio",
+          createdAt: "2026-01-01T00:00:00Z",
+          sentenceCount: 1,
+          hasClips: false,
+          sentences: [
+            {
+              index: 0,
+              start: 0,
+              end: 1,
+              speechStart: 0.1,
+              speechEnd: 0.9,
+              duration: 1,
+              text: "Hi.",
+              words: []
+            }
+          ]
+        })
+      )
+    );
     const user = userEvent.setup();
     const { router } = renderLibrary();
 
     await user.click(await screen.findByRole("link", { name: "Everyday Talk" }));
 
-    expect(await screen.findByText("练习台将在下一个任务完成。")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "第 1 / 1 句" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/jobs/0123456789ABCDEF");
   });
 
