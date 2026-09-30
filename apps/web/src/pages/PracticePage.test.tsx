@@ -336,6 +336,20 @@ describe("loading states", () => {
     expect(state.requests.job).toBe(1);
     expect(screen.getByRole("link", { name: "← 返回素材库" })).toHaveAttribute("href", "/");
   });
+  it("keeps the player and its progress when a background refresh of the job fails", async () => {
+    const { client } = renderPractice();
+    await ready();
+    key("ArrowRight");
+    fireEvent.change(screen.getByLabelText("语速"), { target: { value: "0.8" } });
+
+    state.job = null;
+    await act(() => client.invalidateQueries({ queryKey: ["job", JOB_ID] }));
+
+    expect(await screen.findByText(/暂时无法从服务刷新任务状态/)).toBeInTheDocument();
+    expect(heading()).toBe("第 2 / 3 句");
+    expect(screen.getByLabelText("语速")).toHaveValue("0.8");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });
 
 describe("audio boundaries", () => {

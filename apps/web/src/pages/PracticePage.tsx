@@ -43,8 +43,11 @@ function PracticeLoader({ jobId }: { jobId: string }) {
   // 结果只在任务成功后请求，避免处理中反复得到 409。
   const result = useJobResult(jobId, succeeded);
 
-  if (job.isPending) return <p role="status">正在加载任务…</p>;
-  if (job.isError) {
+  // 只有从没拿到过任务时才显示错误页。已有数据时后台刷新失败（窗口聚焦、重新切句后的刷新）
+  // 也会让查询进入 error 状态，此时继续用上次的数据，不能卸载正在练习的播放器。
+  const current = job.data;
+  if (current === undefined) {
+    if (!job.isError) return <p role="status">正在加载任务…</p>;
     return (
       <>
         <BackLink />
@@ -52,8 +55,6 @@ function PracticeLoader({ jobId }: { jobId: string }) {
       </>
     );
   }
-
-  const current = job.data;
   if (isActive(current.status)) {
     const percent = Math.round(Math.min(1, Math.max(0, current.progress)) * 100);
     return (
@@ -83,8 +84,9 @@ function PracticeLoader({ jobId }: { jobId: string }) {
     );
   }
 
-  if (result.isPending) return <p role="status">正在加载句子…</p>;
-  if (result.isError) {
+  const data = result.data;
+  if (data === undefined) {
+    if (!result.isError) return <p role="status">正在加载句子…</p>;
     return (
       <>
         <BackLink />
@@ -92,21 +94,29 @@ function PracticeLoader({ jobId }: { jobId: string }) {
       </>
     );
   }
-  if (result.data.sentences.length === 0) {
+  if (data.sentences.length === 0) {
     // 空结果不能进入播放器，否则会索引不存在的 sentences[0]。
     return (
       <>
         <BackLink />
-        <h1>{result.data.title}</h1>
+        <h1>{data.title}</h1>
         <p role="status">未找到可练习句段。</p>
       </>
     );
   }
 
+  // 提示与播放器的位置固定，提示出现或消失都不会让播放器重新挂载、丢失练习进度。
   return (
-    <PlayerProvider result={result.data}>
-      <PracticeWorkspace result={result.data} />
-    </PlayerProvider>
+    <>
+      {job.isError || result.isError ? (
+        <p role="status" className="stale-notice">
+          暂时无法从服务刷新任务状态，页面显示的是上次加载的内容。
+        </p>
+      ) : null}
+      <PlayerProvider result={data}>
+        <PracticeWorkspace result={data} />
+      </PlayerProvider>
+    </>
   );
 }
 
