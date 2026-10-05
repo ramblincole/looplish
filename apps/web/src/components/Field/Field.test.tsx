@@ -53,4 +53,21 @@ describe("RangeField", () => {
     );
     expect(screen.getByRole("slider", { name: "最长句" })).toHaveAttribute("aria-invalid", "true");
   });
+
+  it("renders no status role so the readout does not announce separately", () => {
+    render(
+      <RangeField
+        label="最短句"
+        value={1}
+        min={0.2}
+        max={10}
+        step={0.1}
+        unit="s"
+        format={(value) => value.toFixed(1)}
+        onChange={() => {}}
+      />
+    );
+    expect(screen.getByText("1.0s")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
 });

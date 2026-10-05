@@ -27,15 +27,15 @@ export function RangeField({
   const id = useId();
   const text = `${format(value)}${unit}`;
   return (
-    <div className={styles.field} data-layout="stack">
-      {/* 读数放在 label 之外，滑块的读屏名称保持为固定的参数名，数值由 aria-valuetext 给出。 */}
+    <div className={styles.field} data-layout="stack" data-invalid={invalid || undefined}>
+      {/* 读数放在 label 之外，用 aria-hidden 隐藏读屏，避免和 aria-valuetext 重复播报。滑块的读屏名称保持为固定的参数名，数值由 aria-valuetext 给出。 */}
       <span className={styles.rangeHead}>
         <label htmlFor={id} className={styles.label}>
           {label}
         </label>
-        <output htmlFor={id} className={styles.readout}>
+        <span aria-hidden="true" className={styles.readout}>
           {text}
-        </output>
+        </span>
       </span>
       <input
         id={id}

@@ -36,7 +36,7 @@
   border-color: var(--lamp);
 }
 
-.field [aria-invalid="true"] {
+.field :is(select, input)[aria-invalid="true"] {
   border-color: var(--danger);
 }
 
@@ -65,6 +65,10 @@
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--lamp);
+}
+
+.field[data-invalid="true"] .readout {
+  color: var(--danger);
 }
 
 .range {
