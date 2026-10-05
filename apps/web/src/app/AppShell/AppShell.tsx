@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, Outlet } from "react-router";
+import { NavLink, Outlet } from "react-router";
 import { Button } from "../../components/Button/Button";
 import { buttonClass } from "../../components/Button/buttonClass";
 import { ModalProvider } from "../../components/Modal/ModalProvider";
@@ -25,9 +25,9 @@ export function AppShell() {
             <span className="visuallyHidden">Looplish</span>
           </p>
           <nav className={styles.nav} aria-label="主导航">
-            <Link to="/" className={buttonClass("ghost")}>
+            <NavLink to="/" end className={buttonClass("ghost")}>
               素材库
-            </Link>
+            </NavLink>
             <Button
               ref={helpButton}
               variant="ghost"

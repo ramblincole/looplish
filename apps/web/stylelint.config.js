@@ -12,7 +12,18 @@ export default {
     // 颜色只能来自设计变量，保证换肤只改 tokens.css 一处。
     "color-no-hex": true,
     "color-named": "never",
-    "function-disallowed-list": ["rgb", "rgba", "hsl", "hsla"]
+    "function-disallowed-list": [
+      "rgb",
+      "rgba",
+      "hsl",
+      "hsla",
+      "hwb",
+      "lab",
+      "lch",
+      "oklab",
+      "oklch",
+      "color"
+    ]
   },
   overrides: [
     {

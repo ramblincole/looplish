@@ -77,10 +77,10 @@ Looplish 的前后端基础功能已经完成（Task 01–12），但界面只�
 
 - 类名 camelCase（`styles.reelRow`），由 stylelint `selector-class-pattern` 约束。
 - 组件状态用 `data-*` 属性表达（如 `data-veiled`、`data-current`、`data-status`、`data-dragging`），CSS 用属性选择器，不拼接修饰类名。
-- 除 `tokens.css` 外，所有样式文件（含 `base.css`）禁止直接写颜色值（stylelint：`color-no-hex`、`color-named: "never"`、`function-disallowed-list` 禁用 `rgb/rgba/hsl/hsla`）；半透明色用 `color-mix()` 基于变量生成。
+- 除 `tokens.css` 外，所有样式文件（含 `base.css`）禁止直接写颜色值（stylelint：`color-no-hex`、`color-named: "never"`、`function-disallowed-list` 禁用 `rgb/rgba/hsl/hsla/hwb/lab/lch/oklab/oklch/color`）；半透明色用 `color-mix()` 基于变量生成。
 - 测试只按角色、可见文字、label 或 `data-*` 查询，不依赖类名。
 - TypeScript：新增 `src/vite-env.d.ts`（`/// <reference types="vite/client" />`），让 `import styles from "./X.module.css"` 在严格模式下有类型。
-- Vitest：`test.css.modules.classNameStrategy` 设为 `"stable"`，只为不报错。
+- Vitest 3 默认把 CSS Modules 解析为稳定类名（classNameStrategy 默认 "stable"），无需配置。
 
 ### 3.4 stylelint
 
@@ -95,8 +95,8 @@ Looplish 的前后端基础功能已经完成（Task 01–12），但界面只�
 src/
 ├─ styles/                tokens.css、base.css
 ├─ components/            与业务无关的通用组件，每个一个目录（组件 + 样式 + 测试）
-│  ├─ Button/             variant: primary | ghost | transport | reveal
-│  ├─ Field/              Field（标签+控件）、RangeField（滑块+数值读数）
+│  ├─ Button/             variant: primary | ghost | danger | transport | transportMain | reveal
+│  ├─ Field/              Field（标签+控件）、ToggleField（复选开关）、RangeField（滑块+数值读数）
 │  ├─ Modal/              Modal、ModalProvider、useModalOpen
 │  ├─ ConfirmDialog/
 │  ├─ Toast/              ToastProvider、useToast
@@ -119,12 +119,13 @@ src/
 
 ### 5.1 Button
 
-`<Button variant="primary|ghost|transport|reveal" ...buttonProps>`；链接外观的下载按钮用 `<ButtonLink>`（渲染 `<a>`，共享样式）。`transport` 为方形走带按钮，必须提供 `aria-label`。
+`<Button variant="primary|ghost|danger|transport|transportMain|reveal" ...buttonProps>`；链接外观的下载按钮用 `<ButtonLink>`（渲染 `<a>`，共享样式）。`transport` 为方形走带按钮，必须提供 `aria-label`。`danger` 用于确认框的危险操作，`transportMain` 是走带区唯一的琥珀实心主播放键。
 
 ### 5.2 Field / RangeField
 
 - `Field`：`label` + 任意控件，标签为等宽小号大写样式。
-- `RangeField`：`<input type="range">` + 数值读数（如「最短句 1.0s」），读数用 `<output>` 关联。
+- `RangeField`：`<input type="range">` + 数值读数（如「最短句 1.0s」），读数是 `<span aria-hidden="true">`（不用 `<output>`）：`<output>` 隐含 role="status" 会重复播报并与页面状态角色重名；数值由滑块的 `aria-valuetext` 提供。
+- 无效状态：`aria-invalid` 的控件显示危险色边框，滑块读数变危险色。
 
 ### 5.3 Modal
 
@@ -140,6 +141,7 @@ type ModalProps = {
 ```
 
 - 打开时焦点移入第一个可聚焦元素；Tab/Shift+Tab 在弹层内循环；Escape 调用 `onClose`；关闭后焦点回到 `returnFocusTo`（默认为打开前的活动元素）。
+- 键盘处理在焦点离开卡片时同样生效（如提交按钮被禁用后焦点落到 body）：最上层弹层在 document 捕获阶段接管 Escape 与 Tab；输入法组字中的 Escape 不关闭弹层。
 - 遮罩背景 + 模糊，`role="dialog"`、`aria-modal="true"`、`aria-labelledby` 指向标题。
 - `ModalProvider` 统计当前打开的弹层数，`useModalOpen()` 返回是否有任何弹层打开；播放器快捷键据此整体暂停。
 - 使用方：ResegmentDialog、快捷键面板、ProgressOverlay、ConfirmDialog。
@@ -175,9 +177,12 @@ type ModalProps = {
 | 文本输入框（text/search/number/url 等）、`textarea`、可编辑区域 | 屏蔽全部快捷键 |
 | 复选框 | 只把 Space 留给控件，其余快捷键照常 |
 | 单选框 | 只把 Space 与方向键留给控件（组内切换），其余快捷键照常 |
+| 滑块 | 只把方向键留给控件，其余快捷键照常 |
 | 下拉框 | 只把方向键、Space、Enter 留给控件，其余照常 |
 | 按钮、链接 | 只把 Space、Enter 留给控件，其余照常 |
 | 其他 | 全部快捷键生效 |
+
+下拉框不保留字母键（不做选项首字母跳转）：选项是数字与中文，选好语速后仍可直接按 [ ] 调整。
 
 - 带 Ctrl/⌘/Alt 的组合键与输入法组字中的按键不处理。
 - 有弹层打开时快捷键整体暂停。全局不再处理 Escape，Escape 由 Modal 处理；搜索框中的 Escape 交给浏览器清空。

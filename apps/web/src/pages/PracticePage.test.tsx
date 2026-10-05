@@ -528,6 +528,9 @@ describe("veiled transcript", () => {
     key("Enter");
     fireEvent.click(playButton());
     const before = { ...renders };
+    // 先确认两个消费者确实渲染过，否则下面的"计数不变"会空转通过。
+    expect(before.reel).toBeGreaterThan(0);
+    expect(before.controls).toBeGreaterThan(0);
 
     playTo(0.6);
     playTo(0.95);

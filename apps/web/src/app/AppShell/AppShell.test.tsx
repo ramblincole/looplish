@@ -19,7 +19,9 @@ describe("AppShell", () => {
     const banner = screen.getByRole("banner");
     expect(within(banner).getByText("Looplish")).toBeInTheDocument();
     const nav = within(banner).getByRole("navigation", { name: "主导航" });
-    expect(within(nav).getByRole("link", { name: "素材库" })).toHaveAttribute("href", "/");
+    const library = within(nav).getByRole("link", { name: "素材库" });
+    expect(library).toHaveAttribute("href", "/");
+    expect(library).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("页面内容")).toBeInTheDocument();
   });
 

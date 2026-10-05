@@ -25,7 +25,7 @@ export function ConfirmDialog({
   // 「取消」排在前面，打开时默认聚焦它：误按 Enter 不会执行危险操作。
   return (
     <Modal open={open} onClose={onCancel} title={title} returnFocusTo={returnFocusTo}>
-      <p className={styles.message}>{message}</p>
+      <div className={styles.message}>{message}</div>
       <div className={styles.actions}>
         <Button variant="ghost" onClick={onCancel}>
           取消
