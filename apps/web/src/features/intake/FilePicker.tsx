@@ -1,4 +1,4 @@
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import type { Job } from "../../api/types";
 import { Button } from "../../components/Button/Button";
 import { buttonClass } from "../../components/Button/buttonClass";
@@ -24,22 +24,37 @@ export function FilePicker({ file, onFileChange, options, disabled, onCreated }:
   const inputId = useId();
   const input = useRef<HTMLInputElement>(null);
   const upload = useUploadJob();
+  const { reset: resetUpload } = upload;
+  // 上传是异步的：成功回调里要读到「此刻」的文件，而不是提交时闭包里的旧值。
+  const currentFile = useRef(file);
+  useEffect(() => {
+    currentFile.current = file;
+  }, [file]);
 
-  function clear() {
-    onFileChange(null);
-    upload.reset();
-    // 清空原生输入框，否则再次选择同一个文件不会触发 change。
-    if (input.current) input.current.value = "";
-  }
+  // 文件由父组件持有（拖放落在整张卡片上），所以不能只在选择按钮的 onChange 里复位：
+  // 任何来源换了文件，上一次的上传错误与原生输入框的残留选择都要一起丢掉。
+  useEffect(() => {
+    resetUpload();
+    const native = input.current;
+    // 原生输入框仍持有旧文件时必须清空，否则再次选择同一个文件不会触发 change。
+    if (native && (file === null || native.files?.[0] !== file)) native.value = "";
+  }, [file, resetUpload]);
 
   function submit() {
     if (file === null) return;
-    upload.mutate(toUploadForm(file, options), {
-      onSuccess: (job) => {
-        clear();
+    const submitted = file;
+    // 用 mutateAsync 而不是 mutate 的回调：拖入新文件会 reset 这次变更，
+    // 此后 mutate 的回调不再触发，但素材已经创建，必须通知父组件。
+    upload.mutateAsync(toUploadForm(submitted, options)).then(
+      (job) => {
+        // 上传期间用户可能已换了文件，只清掉刚上传的那个，别误删新选的文件。
+        if (currentFile.current === submitted) onFileChange(null);
         onCreated(job);
+      },
+      () => {
+        // 失败信息由 upload.error 展示，这里只避免未处理的 Promise 拒绝。
       }
-    });
+    );
   }
 
   return (
@@ -51,10 +66,7 @@ export function FilePicker({ file, onFileChange, options, disabled, onCreated }:
         type="file"
         className={`visuallyHidden ${styles.fileInput}`}
         accept="audio/*,video/*"
-        onChange={(event) => {
-          upload.reset();
-          onFileChange(event.target.files?.[0] ?? null);
-        }}
+        onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
       />
       <label htmlFor={inputId} className={buttonClass("ghost")}>
         选择本地文件
@@ -65,7 +77,7 @@ export function FilePicker({ file, onFileChange, options, disabled, onCreated }:
           <Button variant="primary" onClick={submit} disabled={disabled || upload.isPending}>
             {upload.isPending ? "上传中…" : "上传并处理"}
           </Button>
-          <Button variant="ghost" onClick={clear} disabled={upload.isPending}>
+          <Button variant="ghost" onClick={() => onFileChange(null)} disabled={upload.isPending}>
             取消
           </Button>
         </>

@@ -56,6 +56,7 @@ type State = {
   jobsStatus: number;
   requests: { jobs: number; created: unknown[]; uploads: string[]; deleted: string[] };
   createError: Record<string, unknown> | null;
+  uploadError: Record<string, unknown> | null;
 };
 
 let state: State;
@@ -67,7 +68,8 @@ function freshState(): State {
     pages: [[]],
     jobsStatus: 200,
     requests: { jobs: 0, created: [], uploads: [], deleted: [] },
-    createError: null
+    createError: null,
+    uploadError: null
   };
 }
 
@@ -104,6 +106,14 @@ const server = setupServer(
   }),
   http.post("*/api/v1/jobs/upload", async ({ request }) => {
     state.requests.uploads.push(`${request.headers.get("content-type")}\n${await request.text()}`);
+    if (state.uploadError) {
+      const { status, code, detail } = state.uploadError as {
+        status: number;
+        code: string;
+        detail: string;
+      };
+      return problem(status, code, detail);
+    }
     return HttpResponse.json(job({ status: "queued", progress: 0 }), { status: 202 });
   }),
   http.delete("*/api/v1/jobs/:id", ({ params }) => {
@@ -264,10 +274,13 @@ describe("submission", () => {
     await ready();
     const card = screen.getByRole("region", { name: "把一段视频拆成一句一句来听" });
 
-    fireEvent.dragOver(card);
+    fireEvent.dragOver(card, { dataTransfer: { types: ["Files"] } });
     expect(card).toHaveAttribute("data-dragging", "true");
     fireEvent.drop(card, {
-      dataTransfer: { files: [new File(["x"], "dropped.mp4", { type: "video/mp4" })] }
+      dataTransfer: {
+        types: ["Files"],
+        files: [new File(["x"], "dropped.mp4", { type: "video/mp4" })]
+      }
     });
 
     expect(card).not.toHaveAttribute("data-dragging");
@@ -277,6 +290,46 @@ describe("submission", () => {
     await user.click(screen.getByRole("button", { name: "取消" }));
     expect(screen.queryByText("已选择：dropped.mp4")).not.toBeInTheDocument();
     expect(screen.getByText("也可以直接拖放到这个区域")).toBeInTheDocument();
+  });
+
+  it("ignores drags that do not carry files", async () => {
+    renderLibrary();
+    await ready();
+    const card = screen.getByRole("region", { name: "把一段视频拆成一句一句来听" });
+
+    fireEvent.dragOver(card, { dataTransfer: { types: ["text/uri-list"] } });
+
+    expect(card).not.toHaveAttribute("data-dragging");
+  });
+
+  it("clears a previous upload error when a new file is dropped", async () => {
+    state.uploadError = {
+      status: 413,
+      code: "UPLOAD_TOO_LARGE",
+      detail: "文件超过大小上限。"
+    };
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+    const card = screen.getByRole("region", { name: "把一段视频拆成一句一句来听" });
+
+    await user.upload(
+      screen.getByLabelText("选择本地文件"),
+      new File(["x"], "big.mp4", { type: "video/mp4" })
+    );
+    await user.click(screen.getByRole("button", { name: "上传并处理" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("文件超过大小上限。");
+
+    fireEvent.drop(card, {
+      dataTransfer: {
+        types: ["Files"],
+        files: [new File(["y"], "next.mp4", { type: "video/mp4" })]
+      }
+    });
+
+    expect(screen.getByText("已选择：next.mp4")).toBeInTheDocument();
+    // TanStack 的状态通知在下一个宏任务里发出，需等待错误提示消失。
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
   });
 
   it("warns about files that do not look like media without blocking them", async () => {

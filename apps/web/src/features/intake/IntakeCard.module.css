@@ -52,9 +52,9 @@
   color: var(--chalk-faint);
 }
 
+/* 不去掉 outline：全局的 :focus-visible 焦点环仍要显示。 */
 .sourceInput:focus {
   border-color: var(--lamp);
-  outline: none;
 }
 
 .fileRow {

@@ -14,6 +14,11 @@ type Props = {
   onCreated: (job: Job) => void;
 };
 
+// 只有携带文件的拖拽才算投放；拖链接或文字到输入框时要保留浏览器原生行为。
+function carriesFiles(event: DragEvent<HTMLElement>): boolean {
+  return event.dataTransfer.types.includes("Files");
+}
+
 export function IntakeCard({ config, options, issues, onOptionsChange, onCreated }: Props) {
   const titleId = useId();
   const [file, setFile] = useState<File | null>(null);
@@ -21,6 +26,7 @@ export function IntakeCard({ config, options, issues, onOptionsChange, onCreated
   const blocked = issues.length > 0;
 
   function drop(event: DragEvent<HTMLElement>) {
+    if (!carriesFiles(event)) return;
     event.preventDefault();
     setDragging(false);
     // 一次只处理一个文件，多选时取第一个；拖入后同样要点「上传并处理」才提交。
@@ -34,6 +40,7 @@ export function IntakeCard({ config, options, issues, onOptionsChange, onCreated
       aria-labelledby={titleId}
       data-dragging={dragging || undefined}
       onDragOver={(event) => {
+        if (!carriesFiles(event)) return;
         event.preventDefault();
         setDragging(true);
       }}

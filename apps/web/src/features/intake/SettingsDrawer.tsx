@@ -41,7 +41,8 @@ export function SettingsDrawer({ value, onChange, config, issues }: Props) {
   const languagesId = useId();
   const [open, setOpen] = useState(false);
   const update = (patch: Partial<ProcessingValues>) => onChange({ ...value, ...patch });
-  // 参数冲突时强制展开，用户能直接看到原因；冲突解除后恢复用户自己的展开状态。
+  // 参数冲突时强制展开，用户能直接看到原因；自动展开会触发 toggle 并记为已展开，
+  // 所以冲突解除后保持展开，直到用户自己收起。
   const expanded = open || issues.length > 0;
   const unordered = value.minDuration >= value.maxDuration;
 
