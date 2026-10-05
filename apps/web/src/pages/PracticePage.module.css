@@ -1,0 +1,92 @@
+.page {
+  max-inline-size: 1400px;
+  margin: 0 auto;
+  padding: var(--pad);
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(16px, 2.5vw, 32px);
+  align-items: start;
+}
+
+/* 播放台吸顶在顶栏下方，长清单滚动时控制始终可见 */
+.stage {
+  position: sticky;
+  top: calc(var(--topbar-h) + 16px);
+  padding: clamp(18px, 2.5vw, 28px);
+  background: var(--ink-raised);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-lg);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--chalk-dim);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.failure {
+  margin: 12px 0 0;
+  color: var(--danger-soft);
+  font-size: 13px;
+}
+
+.note {
+  max-inline-size: 760px;
+  margin: 14px auto;
+  color: var(--chalk-faint);
+  font-size: 14px;
+}
+
+.stateCard {
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+  max-inline-size: 560px;
+  margin: clamp(24px, 6vh, 64px) auto;
+  padding: clamp(24px, 4vw, 36px);
+  background: var(--ink-raised);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-lg);
+}
+
+.stateCard > [role="progressbar"] {
+  inline-size: 100%;
+}
+
+.stateTitle {
+  margin: 0;
+  font-family: var(--font-read);
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 500;
+}
+
+.stageLine {
+  margin: 0;
+  color: var(--lamp);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+@media (width <= 960px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .stage {
+    position: static;
+  }
+}

@@ -123,8 +123,9 @@
 }
 
 @media (width <= 960px) {
+  /* 单栏时清单仍然限高，切句时只滚动清单而不是整页 */
   .list {
-    max-block-size: none;
+    max-block-size: 60vh;
   }
 }
 

@@ -309,7 +309,7 @@ describe("loading states", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     renderPractice();
 
-    expect(await screen.findByText(/处理中（转写）：正在识别/)).toBeInTheDocument();
+    expect(await screen.findByText("处理中·转写 · 正在识别")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "处理进度" })).toHaveAttribute(
       "aria-valuetext",
       "40%"
@@ -356,7 +356,7 @@ describe("loading states", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("没有找到指定任务。");
     expect(state.requests.job).toBe(1);
-    expect(screen.getByRole("link", { name: "← 返回素材库" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "← 素材库" })).toHaveAttribute("href", "/");
   });
   it("keeps the player and its progress when a background refresh of the job fails", async () => {
     const { client } = renderPractice();
@@ -371,6 +371,15 @@ describe("loading states", () => {
     expect(heading()).toBe("第 2 / 3 句");
     expect(screen.getByLabelText("语速")).toHaveValue("0.8");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("names the job title and offers the way back while practising", async () => {
+    renderPractice();
+    await ready();
+
+    expect(screen.getByRole("heading", { level: 1, name: "Everyday Talk" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "← 素材库" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("region", { name: "第 1 / 3 句" })).toContainElement(playButton());
   });
 });
 
