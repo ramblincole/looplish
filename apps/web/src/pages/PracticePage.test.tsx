@@ -391,7 +391,7 @@ describe("audio boundaries", () => {
     expect(playButton()).toHaveTextContent("播放");
     // 到达句末后 RAF 链结束，不再有排队的帧。
     expect(frames.size).toBe(0);
-    expect(screen.getByText("共 3 句，已练 1 句")).toBeInTheDocument();
+    expect(screen.getByText("已练 1 / 3")).toBeInTheDocument();
   });
 
   it("resumes a paused sentence in place but replays from the start with R", async () => {
@@ -442,7 +442,7 @@ describe("audio boundaries", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("浏览器拒绝了播放");
     expect(playButton()).toHaveTextContent("播放");
     // 播放被拒不是句子完成，不能计为已练。
-    expect(screen.getByText("共 3 句，已练 0 句")).toBeInTheDocument();
+    expect(screen.getByText("已练 0 / 3")).toBeInTheDocument();
   });
 
   it("ignores the AbortError caused by pausing before play resolves", async () => {
@@ -782,7 +782,7 @@ describe("hotkeys", () => {
     const user = userEvent.setup();
     renderPractice();
     await ready();
-    await user.click(screen.getByRole("button", { name: "重新切句" }));
+    await user.click(screen.getByRole("button", { name: "重新切分" }));
 
     key("ArrowRight");
     key(" ");
@@ -834,21 +834,32 @@ describe("hotkeys", () => {
 });
 
 describe("sentence reel", () => {
-  it("searches sentences and marks the current one without relying on color", async () => {
+  it("blurs the list while the current sentence is veiled and lets search reveal matches", async () => {
     const user = userEvent.setup();
     renderPractice();
     await ready();
-    // 盲听模式下列表只显示时间，不剧透原文。
-    expect(screen.queryByText("How are you?")).not.toBeInTheDocument();
+    // 盲听时列表原文模糊并对读屏隐藏，行的读屏名称只剩序号与时间。
+    expect(screen.getByText("How are you?")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("button", { name: /^第 2 句\s*0:02$/ })).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("搜索句子"), "how");
 
     expect(screen.getByText("找到 1 句")).toBeInTheDocument();
     const item = screen.getByRole("button", { name: /^第 2 句/ });
-    expect(item).toHaveTextContent("How are you?");
+    expect(within(item).getByText("How are you?")).not.toHaveAttribute("aria-hidden");
     await user.click(item);
     expect(item).toHaveAttribute("aria-current", "true");
     expect(item).toHaveTextContent("已练");
+  });
+
+  it("shows every sentence once the current one is revealed", async () => {
+    renderPractice();
+    await ready();
+
+    key("Enter");
+
+    expect(screen.getByText("How are you?")).not.toHaveAttribute("aria-hidden");
+    expect(screen.getByText("已练 0 / 3")).toBeInTheDocument();
   });
 });
 
@@ -860,9 +871,9 @@ describe("resegment and export", () => {
     key("ArrowRight");
     const jobRequests = state.requests.job;
 
-    const trigger = screen.getByRole("button", { name: "重新切句" });
+    const trigger = screen.getByRole("button", { name: "重新切分" });
     await user.click(trigger);
-    const dialog = screen.getByRole("dialog", { name: "重新切句" });
+    const dialog = screen.getByRole("dialog", { name: "重新切分" });
     expect(within(dialog).getByLabelText("最短句长（秒）")).toHaveFocus();
     const apply = within(dialog).getByRole("button", { name: "应用" });
     expect(apply).toBeDisabled();
@@ -877,7 +888,7 @@ describe("resegment and export", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(state.requests.resegment).toEqual([{ maxDuration: 2 }]);
     expect(heading()).toBe("第 1 / 4 句");
-    expect(screen.getByText("共 4 句，已练 0 句")).toBeInTheDocument();
+    expect(screen.getByText("已练 0 / 4")).toBeInTheDocument();
     // 新结果直接写入缓存，不再请求 result；Job 的句子数交给服务端刷新。
     expect(state.requests.result).toBe(1);
     await waitFor(() => expect(state.requests.job).toBeGreaterThan(jobRequests));
@@ -894,7 +905,7 @@ describe("resegment and export", () => {
     renderPractice();
     await ready();
 
-    await user.click(screen.getByRole("button", { name: "重新切句" }));
+    await user.click(screen.getByRole("button", { name: "重新切分" }));
     await user.type(screen.getByLabelText("强制断句停顿（秒）"), "1");
     await user.click(screen.getByRole("button", { name: "应用" }));
 
@@ -908,7 +919,7 @@ describe("resegment and export", () => {
     const user = userEvent.setup();
     renderPractice();
     await ready();
-    const trigger = screen.getByRole("button", { name: "重新切句" });
+    const trigger = screen.getByRole("button", { name: "重新切分" });
     await user.click(trigger);
 
     key("ArrowRight");
@@ -925,15 +936,15 @@ describe("resegment and export", () => {
     await ready();
     const exports = within(screen.getByRole("navigation", { name: "导出" }));
 
-    expect(exports.getByRole("link", { name: "SRT 字幕" })).toHaveAttribute(
+    expect(exports.getByRole("link", { name: "下载 SRT" })).toHaveAttribute(
       "href",
       `/api/v1/jobs/${JOB_ID}/subtitles.srt`
     );
-    expect(exports.getByRole("link", { name: "VTT 字幕" })).toHaveAttribute(
+    expect(exports.getByRole("link", { name: "下载 VTT" })).toHaveAttribute(
       "href",
       `/api/v1/jobs/${JOB_ID}/subtitles.vtt`
     );
-    expect(exports.getByRole("link", { name: "纯文本" })).toHaveAttribute(
+    expect(exports.getByRole("link", { name: "下载文本" })).toHaveAttribute(
       "href",
       `/api/v1/jobs/${JOB_ID}/subtitles.txt`
     );

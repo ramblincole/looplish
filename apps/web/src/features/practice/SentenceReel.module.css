@@ -1,0 +1,139 @@
+.reel {
+  overflow: hidden;
+  background: var(--ink-raised);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-lg);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.label {
+  margin: 0;
+  color: var(--chalk-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.summary {
+  margin-right: auto;
+  color: var(--chalk-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.search {
+  inline-size: 150px;
+  padding: 6px 10px;
+  background: var(--ink-sunk);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+}
+
+.search:focus {
+  border-color: var(--lamp);
+}
+
+.list {
+  max-block-size: calc(100vh - 190px);
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-color: var(--ink-line-2) transparent;
+  scrollbar-width: thin;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 34px 52px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  inline-size: 100%;
+  padding: 9px 11px;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--chalk);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+.row:hover {
+  background: var(--ink-sunk);
+}
+
+/* 当前句用左边框与淡色底表达，序号与时间同时变色，不只靠一种颜色 */
+.row[data-current="true"] {
+  background: color-mix(in srgb, var(--lamp) 9%, transparent);
+  border-left-color: var(--lamp);
+}
+
+.index,
+.time {
+  color: var(--chalk-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.row[data-current="true"] .index,
+.row[data-current="true"] .time {
+  color: var(--lamp);
+}
+
+.text {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 13.5px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.row[data-visited="true"] .text {
+  color: var(--chalk-dim);
+}
+
+/* 盲听时模糊原文，只留行的节奏 */
+.text[data-blurred="true"] {
+  opacity: 0.5;
+  filter: blur(4.5px);
+  user-select: none;
+}
+
+.visited {
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+@media (width <= 960px) {
+  .list {
+    max-block-size: none;
+  }
+}
+
+@media (width <= 560px) {
+  .row {
+    grid-template-columns: 28px 1fr auto;
+  }
+
+  .time {
+    display: none;
+  }
+}

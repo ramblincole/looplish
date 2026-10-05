@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ResegmentRequest } from "../../api/types";
+import { Button } from "../../components/Button/Button";
+import { Field } from "../../components/Field/Field";
 import { Modal } from "../../components/Modal/Modal";
 import { errorMessage, SEGMENT_LIMITS, type SegmentField } from "../intake/processing";
 import { useResegment } from "../jobs/useJobs";
 import { usePlayer } from "./playerContext";
+import styles from "./ResegmentDialog.module.css";
 
 const FIELDS = Object.keys(SEGMENT_LIMITS) as SegmentField[];
 type Draft = Record<SegmentField, string>;
@@ -74,31 +77,29 @@ export function ResegmentDialog({
 
   return (
     <>
-      <button
-        type="button"
+      <Button
         ref={triggerRef}
-        className="secondary"
+        variant="ghost"
         onClick={() => onOpenChange(true)}
         aria-haspopup="dialog"
       >
-        重新切句
-      </button>
+        重新切分
+      </Button>
       <Modal
         open={open}
-        title="重新切句"
+        title="重新切分"
         returnFocusTo={triggerRef}
         onClose={() => onOpenChange(false)}
       >
-        <p className="dialog-hint">
-          只填写需要调整的参数，留空的沿用该素材上次的设置。重新切句只使用已有的词级时间，不会重新识别。
+        <p className={styles.hint}>
+          只填写需要调整的参数，留空的沿用该素材上次的设置。重新切分只使用已有的词级时间，不会重新识别。
         </p>
         <form onSubmit={submit} noValidate>
-          <div className="dialog-fields">
+          <div className={styles.fields}>
             {FIELDS.map((field) => {
               const limit = SEGMENT_LIMITS[field];
               return (
-                <label key={field}>
-                  {limit.label}（秒）
+                <Field key={field} label={`${limit.label}（秒）`}>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -111,25 +112,33 @@ export function ResegmentDialog({
                       setDraft((current) => ({ ...current, [field]: event.target.value }))
                     }
                   />
-                </label>
+                </Field>
               );
             })}
           </div>
           {issues.length > 0 ? (
-            <ul className="issues" role="alert">
+            <ul className={styles.issues} role="alert">
               {issues.map((issue) => (
                 <li key={issue}>{issue}</li>
               ))}
             </ul>
           ) : null}
-          {resegment.isError ? <p role="alert">{errorMessage(resegment.error)}</p> : null}
-          <div className="dialog-actions">
-            <button type="button" className="secondary" onClick={() => onOpenChange(false)}>
+          {resegment.isError ? (
+            <p role="alert" className={styles.error}>
+              {errorMessage(resegment.error)}
+            </p>
+          ) : null}
+          <div className={styles.actions}>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
               取消
-            </button>
-            <button type="submit" disabled={!filled || issues.length > 0 || resegment.isPending}>
-              {resegment.isPending ? "正在切句…" : "应用"}
-            </button>
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!filled || issues.length > 0 || resegment.isPending}
+            >
+              {resegment.isPending ? "正在切分…" : "应用"}
+            </Button>
           </div>
         </form>
       </Modal>

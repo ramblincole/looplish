@@ -5,11 +5,10 @@ import { useToast } from "../components/Toast/toastContext";
 import { errorMessage } from "../features/intake/processing";
 import { STAGE_LABELS } from "../features/jobs/jobLabels";
 import { isActive, useJob, useJobResult } from "../features/jobs/useJobs";
-import { ExportMenu } from "../features/practice/ExportMenu";
 import { PlayerProvider } from "../features/practice/PlayerProvider";
 import { PlaybackSettings } from "../features/practice/PlaybackSettings";
+import { PracticeActions } from "../features/practice/PracticeActions";
 import { Readout } from "../features/practice/Readout";
-import { ResegmentDialog } from "../features/practice/ResegmentDialog";
 import { SentenceProgress } from "../features/practice/SentenceProgress";
 import { SentenceReel } from "../features/practice/SentenceReel";
 import { Transport } from "../features/practice/Transport";
@@ -170,14 +169,6 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
         <BackLink />
         <h1>{result.title}</h1>
         {result.uploader ? <p className="uploader">{result.uploader}</p> : null}
-        <div className="toolbar">
-          <ResegmentDialog
-            jobId={result.jobId}
-            open={resegmentOpen}
-            onOpenChange={setResegmentOpen}
-          />
-          <ExportMenu jobId={result.jobId} />
-        </div>
       </header>
       <div className="workspace">
         <SentenceReel sentences={result.sentences} />
@@ -192,6 +183,11 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
           {playbackError ? <p role="alert">{playbackError}</p> : null}
           <Transport />
           <PlaybackSettings />
+          <PracticeActions
+            jobId={result.jobId}
+            resegmentOpen={resegmentOpen}
+            onResegmentOpenChange={setResegmentOpen}
+          />
           <audio
             ref={audioRef}
             src={result.audioUrl}
