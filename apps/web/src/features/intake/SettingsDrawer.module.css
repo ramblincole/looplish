@@ -1,0 +1,43 @@
+.drawer {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ink-line);
+}
+
+.summary {
+  color: var(--chalk-dim);
+  font-size: 13px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary::before {
+  content: "▸ ";
+  color: var(--lamp);
+}
+
+.drawer[open] .summary::before {
+  content: "▾ ";
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.toggleRow {
+  grid-column: 1 / -1;
+}
+
+.issues {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--danger-soft);
+  font-size: 13px;
+}

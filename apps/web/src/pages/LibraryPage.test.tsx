@@ -149,13 +149,11 @@ function renderLibrary(
 }
 
 async function ready() {
-  return screen.findByRole("button", { name: "开始处理" });
+  return screen.findByRole("button", { name: "开始切分" });
 }
 
-async function setNumber(user: ReturnType<typeof userEvent.setup>, label: RegExp, value: string) {
-  const input = screen.getByLabelText(label);
-  await user.clear(input);
-  if (value) await user.type(input, value);
+function setSlider(label: string, value: string) {
+  fireEvent.change(screen.getByRole("slider", { name: label }), { target: { value } });
 }
 
 describe("submission", () => {
@@ -167,8 +165,8 @@ describe("submission", () => {
     renderLibrary();
 
     expect(await screen.findByRole("status")).toHaveTextContent("正在加载运行配置");
-    expect(screen.queryByRole("button", { name: "开始处理" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "上传并处理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "开始切分" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("选择本地文件")).not.toBeInTheDocument();
 
     release();
 
@@ -180,25 +178,23 @@ describe("submission", () => {
     renderLibrary();
     await ready();
 
-    await setNumber(user, /最长句长/, "10");
+    setSlider("最长句长", "10");
     await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "https://example.test/v");
-    await user.click(screen.getByRole("button", { name: "开始处理" }));
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
 
-    await screen.findByText("已加入处理队列。");
-    expect(state.requests.created).toEqual([
-      {
-        source: "https://example.test/v",
-        asrBackend: "local",
-        subtitleSource: "auto",
-        language: "en",
-        makeClips: false,
-        minDuration: 1,
-        maxDuration: 10,
-        hardPause: 0.75,
-        leadPad: 0.2,
-        tailPad: 0.4
-      }
-    ]);
+    await waitFor(() => expect(state.requests.created).toHaveLength(1));
+    expect(state.requests.created[0]).toEqual({
+      source: "https://example.test/v",
+      asrBackend: "local",
+      subtitleSource: "auto",
+      language: "en",
+      makeClips: false,
+      minDuration: 1,
+      maxDuration: 10,
+      hardPause: 0.75,
+      leadPad: 0.2,
+      tailPad: 0.4
+    });
     expect(screen.getByLabelText("视频链接或本机媒体路径")).toHaveValue("");
   });
 
@@ -209,9 +205,9 @@ describe("submission", () => {
 
     await user.clear(screen.getByLabelText("语言"));
     await user.click(screen.getByLabelText("预先生成全部单句音频"));
-    await setNumber(user, /最长句长/, "10");
+    setSlider("最长句长", "10");
     await user.upload(
-      screen.getByLabelText("选择媒体文件"),
+      screen.getByLabelText("选择本地文件"),
       new File(["RIFF"], "talk.wav", { type: "audio/wav" })
     );
 
@@ -220,7 +216,7 @@ describe("submission", () => {
 
     await user.click(screen.getByRole("button", { name: "上传并处理" }));
 
-    await screen.findByText("已上传并加入处理队列。");
+    await waitFor(() => expect(state.requests.uploads).toHaveLength(1));
     const [raw] = state.requests.uploads;
     expect(raw).toMatch(/^multipart\/form-data; boundary=/);
     expect(multipartFields(raw)).toEqual({
@@ -235,6 +231,7 @@ describe("submission", () => {
       leadPad: "0.2",
       tailPad: "0.4"
     });
+    expect(screen.queryByText("已选择：talk.wav")).not.toBeInTheDocument();
   });
 
   it("uses the same options for both entries", async () => {
@@ -242,16 +239,17 @@ describe("submission", () => {
     renderLibrary();
     await ready();
     await user.selectOptions(screen.getByLabelText("字幕来源"), "asr");
-    await setNumber(user, /强制断句停顿/, "1.5");
+    setSlider("强制断句停顿", "1.5");
 
     await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "https://example.test/v");
-    await user.click(screen.getByRole("button", { name: "开始处理" }));
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
+    await user.click(await screen.findByRole("button", { name: "放到后台" }));
     await user.upload(
-      screen.getByLabelText("选择媒体文件"),
+      screen.getByLabelText("选择本地文件"),
       new File(["x"], "a.mp3", { type: "audio/mpeg" })
     );
     await user.click(screen.getByRole("button", { name: "上传并处理" }));
-    await screen.findByText("已上传并加入处理队列。");
+    await waitFor(() => expect(state.requests.uploads).toHaveLength(1));
 
     const json = state.requests.created[0] as Record<string, unknown>;
     const form = multipartFields(state.requests.uploads[0]);
@@ -260,17 +258,25 @@ describe("submission", () => {
     expect(form.subtitleSource).toBe("asr");
   });
 
-  it("accepts a dropped file", async () => {
+  it("accepts a file dropped anywhere on the intake card and lets it be cancelled", async () => {
+    const user = userEvent.setup();
     renderLibrary();
     await ready();
-    const zone = screen.getByText("或把文件拖到这里").closest("div")!;
+    const card = screen.getByRole("region", { name: "把一段视频拆成一句一句来听" });
 
-    fireEvent.drop(zone, {
+    fireEvent.dragOver(card);
+    expect(card).toHaveAttribute("data-dragging", "true");
+    fireEvent.drop(card, {
       dataTransfer: { files: [new File(["x"], "dropped.mp4", { type: "video/mp4" })] }
     });
 
+    expect(card).not.toHaveAttribute("data-dragging");
     expect(screen.getByText("已选择：dropped.mp4")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传并处理" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByText("已选择：dropped.mp4")).not.toBeInTheDocument();
+    expect(screen.getByText("也可以直接拖放到这个区域")).toBeInTheDocument();
   });
 
   it("warns about files that do not look like media without blocking them", async () => {
@@ -279,7 +285,7 @@ describe("submission", () => {
     await ready();
 
     await user.upload(
-      screen.getByLabelText("选择媒体文件"),
+      screen.getByLabelText("选择本地文件"),
       new File(["x"], "notes.pdf", { type: "application/pdf" })
     );
 
@@ -291,7 +297,7 @@ describe("submission", () => {
     const user = userEvent.setup();
     renderLibrary();
     await ready();
-    const picker = screen.getByLabelText("选择媒体文件");
+    const picker = screen.getByLabelText("选择本地文件");
 
     for (let step = 0; step < 30 && document.activeElement !== picker; step += 1) {
       await user.tab();
@@ -300,23 +306,26 @@ describe("submission", () => {
     expect(picker).toHaveFocus();
   });
 
-  it("blocks out-of-range numbers with the same limits as the server", async () => {
-    const user = userEvent.setup();
+  it("opens the settings drawer and blocks both entries while durations conflict", async () => {
     renderLibrary();
     await ready();
+    const drawer = screen.getByText("识别与切分设置").closest("details")!;
+    expect(drawer).not.toHaveAttribute("open");
 
-    await setNumber(user, /最短句长/, "12");
-    expect(screen.getByRole("alert")).toHaveTextContent("最短句长需在 0.2 到 10 秒之间。");
-    expect(screen.getByRole("button", { name: "开始处理" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "上传并处理" })).toBeDisabled();
-    expect(screen.getByLabelText(/最短句长/)).toHaveAttribute("aria-invalid", "true");
+    setSlider("最短句长", "8");
+    setSlider("最长句长", "8");
 
-    await setNumber(user, /最短句长/, "8");
-    await setNumber(user, /最长句长/, "8");
+    expect(drawer).toHaveAttribute("open");
     expect(screen.getByRole("alert")).toHaveTextContent("最短句长必须小于最长句长。");
+    expect(screen.getByRole("slider", { name: "最长句长" })).toHaveAttribute(
+      "aria-invalid",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: "开始切分" })).toBeDisabled();
 
-    await setNumber(user, /最长句长/, "");
-    expect(screen.getByRole("alert")).toHaveTextContent("最长句长需要填写数字。");
+    setSlider("最长句长", "12");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始切分" })).toBeEnabled();
   });
 
   it("shows the server's problem detail when creation fails", async () => {
@@ -330,7 +339,7 @@ describe("submission", () => {
     await ready();
 
     await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "C:/media/talk.mp4");
-    await user.click(screen.getByRole("button", { name: "开始处理" }));
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("此服务未开放本机文件路径。");
   });
@@ -342,7 +351,7 @@ describe("submission", () => {
     await ready();
 
     await user.type(screen.getByLabelText("视频链接"), "C:/media/talk.mp4");
-    await user.click(screen.getByRole("button", { name: "开始处理" }));
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent("只接受 http(s) 链接");
     expect(state.requests.created).toEqual([]);
@@ -352,7 +361,7 @@ describe("submission", () => {
     renderLibrary();
     await ready();
 
-    const options = screen.getByLabelText("识别后端").querySelectorAll("option");
+    const options = screen.getByLabelText("识别引擎").querySelectorAll("option");
     expect([...options].map((option) => option.value)).toEqual(["local"]);
   });
 });

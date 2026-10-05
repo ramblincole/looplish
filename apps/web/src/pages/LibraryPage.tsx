@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { ProcessingOptions } from "../features/intake/ProcessingOptions";
-import { SourceForm } from "../features/intake/SourceForm";
-import { UploadDropzone } from "../features/intake/UploadDropzone";
+import { IntakeCard } from "../features/intake/IntakeCard";
 import { initialValues, validate, type ProcessingValues } from "../features/intake/processing";
 import { JobList } from "../features/jobs/JobList";
 import { useJobs, useRuntimeConfig } from "../features/jobs/useJobs";
@@ -22,31 +20,16 @@ export function LibraryPage() {
   if (config.isPending || options === null) return <p role="status">正在加载运行配置…</p>;
 
   const issues = validate(options);
-  const blocked = issues.length > 0;
 
   return (
     <main className="library">
-      <header>
-        <h1>Looplish</h1>
-        <p>Listen. Loop. Learn.</p>
-      </header>
-      <section aria-labelledby="create-title">
-        <h2 id="create-title">添加学习素材</h2>
-        <ProcessingOptions
-          value={options}
-          onChange={setOptions}
-          config={config.data}
-          issues={issues}
-        />
-        <div className="intake">
-          <SourceForm
-            options={options}
-            disabled={blocked}
-            allowLocalPaths={config.data.allowLocalPaths}
-          />
-          <UploadDropzone options={options} disabled={blocked} />
-        </div>
-      </section>
+      <IntakeCard
+        config={config.data}
+        options={options}
+        issues={issues}
+        onOptionsChange={setOptions}
+        onCreated={() => {}}
+      />
       <section aria-labelledby="jobs-title">
         <h2 id="jobs-title">素材库</h2>
         {jobs.isPending ? <p role="status">正在加载…</p> : null}
