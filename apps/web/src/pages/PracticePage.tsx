@@ -7,11 +7,12 @@ import { STAGE_LABELS } from "../features/jobs/jobLabels";
 import { isActive, useJob, useJobResult } from "../features/jobs/useJobs";
 import { ExportMenu } from "../features/practice/ExportMenu";
 import { PlayerProvider } from "../features/practice/PlayerProvider";
-import { PracticeControls } from "../features/practice/PracticeControls";
+import { PlaybackSettings } from "../features/practice/PlaybackSettings";
 import { Readout } from "../features/practice/Readout";
 import { ResegmentDialog } from "../features/practice/ResegmentDialog";
 import { SentenceProgress } from "../features/practice/SentenceProgress";
 import { SentenceReel } from "../features/practice/SentenceReel";
+import { Transport } from "../features/practice/Transport";
 import { VeiledSentence } from "../features/practice/VeiledSentence";
 import { usePlayer, usePlayerActions } from "../features/practice/playerContext";
 import { formatRate, formatRepeat } from "../features/practice/playerLabels";
@@ -188,17 +189,9 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
               <SentenceProgress start={sentence.start} end={sentence.end} />
             </>
           ) : null}
-          <button
-            type="button"
-            className="secondary"
-            onClick={actions.toggleReveal}
-            aria-pressed={state.revealed}
-            aria-keyshortcuts="Enter"
-          >
-            {state.revealed ? "隐藏文本" : "显示文本"}
-          </button>
           {playbackError ? <p role="alert">{playbackError}</p> : null}
-          <PracticeControls />
+          <Transport />
+          <PlaybackSettings />
           <audio
             ref={audioRef}
             src={result.audioUrl}

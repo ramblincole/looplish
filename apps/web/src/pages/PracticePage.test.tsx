@@ -22,12 +22,12 @@ vi.mock("../features/practice/SentenceReel", async (importOriginal) => {
   };
 });
 
-vi.mock("../features/practice/PracticeControls", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../features/practice/PracticeControls")>();
+vi.mock("../features/practice/PlaybackSettings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../features/practice/PlaybackSettings")>();
   return {
-    PracticeControls: () => {
+    PlaybackSettings: () => {
       renders.controls += 1;
-      return actual.PracticeControls();
+      return actual.PlaybackSettings();
     }
   };
 });
@@ -493,7 +493,7 @@ describe("veiled transcript", () => {
     expect(transcript()).toHaveAttribute("data-veiled", "false");
     expect(within(transcript()).getByText("Hello").closest("p")).not.toHaveAttribute("aria-hidden");
     expect(transcript()).toHaveTextContent("Hello there.");
-    expect(screen.getByRole("button", { name: "隐藏文本" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "遮住原文" })).toHaveAttribute(
       "aria-pressed",
       "true"
     );
@@ -524,7 +524,7 @@ describe("veiled transcript", () => {
     expect(heading()).toBe("第 2 / 3 句");
     expect(within(transcript()).getByText("文本已隐藏，共 3 个词。")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText("切换句子时重新隐藏文本"));
+    fireEvent.click(screen.getByLabelText("换句自动遮住"));
     key("Enter");
     key("ArrowRight");
     expect(transcript()).toHaveAttribute("data-veiled", "false");
@@ -569,7 +569,7 @@ describe("loops, gaps and auto advance", () => {
   it("replays after a fixed gap until repeat is reached, then stops without a timer", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "2" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
     fireEvent.click(playButton());
@@ -591,8 +591,8 @@ describe("loops, gaps and auto advance", () => {
   it("keeps looping with infinite repeat until the user pauses", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "infinite" } });
-    fireEvent.change(screen.getByLabelText("跟读留白"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "infinite" } });
+    fireEvent.change(screen.getByLabelText("跟读间隔"), { target: { value: "0" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
     fireEvent.click(playButton());
@@ -612,7 +612,7 @@ describe("loops, gaps and auto advance", () => {
   it("waits as long as the finished sentence before auto advancing", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("跟读留白"), { target: { value: "sentence" } });
+    fireEvent.change(screen.getByLabelText("跟读间隔"), { target: { value: "sentence" } });
     fireEvent.click(screen.getByLabelText("自动下一句"));
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
@@ -648,7 +648,7 @@ describe("loops, gaps and auto advance", () => {
   it("cancels the pending gap when the user selects another sentence", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "2" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
     fireEvent.click(playButton());
@@ -667,7 +667,7 @@ describe("loops, gaps and auto advance", () => {
   it("stops frames, timers and sound on unmount", async () => {
     const { unmount } = renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "2" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     fireEvent.click(playButton());
     playTo(2.0);
@@ -685,8 +685,8 @@ describe("loops, gaps and auto advance", () => {
   it("stretches a sentence-length gap by the playback rate", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "2" } });
-    fireEvent.change(screen.getByLabelText("跟读留白"), { target: { value: "sentence" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("跟读间隔"), { target: { value: "sentence" } });
     fireEvent.change(screen.getByLabelText("语速"), { target: { value: "0.8" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
@@ -722,7 +722,7 @@ describe("hotkeys", () => {
 
     key("l");
     key("L");
-    expect(screen.getByLabelText("循环次数")).toHaveValue("3");
+    expect(screen.getByLabelText("循环")).toHaveValue("3");
 
     key("]");
     key("]");
@@ -812,6 +812,24 @@ describe("hotkeys", () => {
     key("ArrowRight");
 
     expect(heading()).toBe("第 1 / 3 句");
+  });
+
+  it("labels icon-only transport buttons and shows their hotkeys on hover", async () => {
+    renderPractice();
+    await ready();
+
+    for (const [name, hint] of [
+      ["上一句", "←"],
+      ["播放", "空格"],
+      ["重听", "R"],
+      ["下一句", "→"]
+    ]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("title", `${name}（${hint}）`);
+    }
+    expect(screen.getByRole("button", { name: "显示原文" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
   });
 });
 
