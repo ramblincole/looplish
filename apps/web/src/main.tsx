@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router/dom";
 import { queryClient } from "./app/queryClient";
 import { createAppRouter } from "./app/router";
+import "./styles/tokens.css";
+import "./styles/base.css";
 import "./styles.css";
 
 const root = document.getElementById("root");

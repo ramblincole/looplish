@@ -1,0 +1,43 @@
+/* 设计变量：全项目唯一允许直接写颜色值与字体栈的地方（stylelint 对其余样式文件禁止）。
+   取值沿用 whisper-split「语言实验室控制台」：蓝黑机箱底色 + 钠灯琥珀读数。 */
+:root {
+  color-scheme: dark;
+
+  /* 机箱 */
+  --ink: #0e1419;
+  --ink-raised: #161e26;
+  --ink-sunk: #0a0f13;
+  --ink-line: #26313b;
+  --ink-line-2: #38454f;
+  --ink-glow: #1b242d;
+
+  /* 读数灯与状态 */
+  --lamp: #f0a22e;
+  --lamp-soft: #f0a22e22;
+  --lamp-ink: #171104;
+  --signal: #6fd3c7;
+  --danger: #e4685d;
+  --danger-soft: #f3aaa3;
+
+  /* 字 */
+  --chalk: #e6edf3;
+  --chalk-dim: #8494a1;
+  --chalk-faint: #5c6975;
+
+  /* 字体名加引号：自定义属性里的未加引号名称会被 value-keyword-case 当作关键字。 */
+  --font-ui: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-read: "Iowan Old Style", "Palatino Linotype", "Palatino", "Georgia", "Songti SC", serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Consolas", "SF Mono", "Menlo", monospace;
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 14px;
+  --pad: clamp(16px, 3vw, 32px);
+  --dur-fast: 0.15s;
+  --dur-base: 0.2s;
+  --z-topbar: 40;
+  --z-modal: 60;
+  --z-toast: 70;
+  --topbar-h: 58px;
+  --shadow-pop: 0 8px 28px #00000080;
+  --backdrop: #0a0f13d1;
+}
