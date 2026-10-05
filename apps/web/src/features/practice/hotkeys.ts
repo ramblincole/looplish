@@ -57,7 +57,7 @@ const ACTIVATION_KEYS = new Set([" ", "Enter"]);
 
 /**
  * 焦点所在的控件是否要自己处理这个键。返回 true 时快捷键让路，交给浏览器的默认行为。
- * 规则见 spec 5.8：文本类全部让路；复选/单选只留 Space；滑块只留方向键；
+ * 规则见 spec 5.8：文本类全部让路；复选只留 Space；单选留 Space 与方向键；滑块只留方向键；
  * 下拉框留方向键、Space、Enter；按钮与链接留 Space、Enter。
  */
 export function controlOwnsKey(target: EventTarget | null, key: string): boolean {
@@ -66,7 +66,8 @@ export function controlOwnsKey(target: EventTarget | null, key: string): boolean
   if (target instanceof HTMLTextAreaElement) return true;
   if (target instanceof HTMLInputElement) {
     if (TEXT_INPUT_TYPES.has(target.type)) return true;
-    if (target.type === "checkbox" || target.type === "radio") return key === " ";
+    if (target.type === "checkbox") return key === " ";
+    if (target.type === "radio") return key === " " || key.startsWith("Arrow");
     if (target.type === "range") return key.startsWith("Arrow");
     // 其余 input（button、submit、file 等）按按钮处理。
     return ACTIVATION_KEYS.has(key);

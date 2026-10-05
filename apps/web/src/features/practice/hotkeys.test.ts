@@ -44,7 +44,7 @@ const MATRIX: Array<[string, string, Record<(typeof KEYS)[number], boolean>]> = 
   [
     "单选框",
     '<input type="radio">',
-    { " ": true, Enter: false, ArrowRight: false, r: false, "]": false }
+    { " ": true, Enter: false, ArrowRight: true, r: false, "]": false }
   ],
   [
     "滑块",
