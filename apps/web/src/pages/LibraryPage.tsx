@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IntakeCard } from "../features/intake/IntakeCard";
 import { initialValues, validate, type ProcessingValues } from "../features/intake/processing";
 import { JobList } from "../features/jobs/JobList";
@@ -8,6 +8,7 @@ export function LibraryPage() {
   const config = useRuntimeConfig();
   const jobs = useJobs();
   const [options, setOptions] = useState<ProcessingValues | null>(null);
+  const jobsHeading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     // 只在首次拿到配置时初始化，后台刷新不得覆盖用户正在编辑的参数。
@@ -31,7 +32,9 @@ export function LibraryPage() {
         onCreated={() => {}}
       />
       <section aria-labelledby="jobs-title">
-        <h2 id="jobs-title">素材库</h2>
+        <h2 id="jobs-title" ref={jobsHeading} tabIndex={-1}>
+          已处理的素材
+        </h2>
         {jobs.isPending ? <p role="status">正在加载…</p> : null}
         {/* 只保留一条持续显示的提示；重试与退避由查询层负责，不反复弹出。 */}
         {jobs.isError ? (
@@ -39,7 +42,9 @@ export function LibraryPage() {
             {jobs.data ? "与服务的连接中断，正在重试…" : "暂时无法加载任务，请稍后刷新。"}
           </p>
         ) : null}
-        {jobs.data ? <JobList jobs={jobs.data.items} /> : null}
+        {jobs.data ? (
+          <JobList jobs={jobs.data.items} onDeleted={() => jobsHeading.current?.focus()} />
+        ) : null}
       </section>
     </main>
   );

@@ -1,0 +1,136 @@
+.list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  background: var(--ink-raised);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-md);
+  transition: border-color var(--dur-fast);
+}
+
+.card:hover {
+  border-color: var(--ink-line-2);
+}
+
+.body {
+  min-inline-size: 0;
+}
+
+.title,
+.titleLink {
+  display: block;
+  overflow: hidden;
+  color: var(--chalk);
+  font-size: 14px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 整张卡片可点击，但语义上只有标题是链接 */
+.titleLink::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: "";
+}
+
+.meta {
+  margin: 2px 0 0;
+  color: var(--chalk-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.percent {
+  color: var(--lamp);
+  font-variant-numeric: tabular-nums;
+}
+
+.message {
+  overflow: hidden;
+  color: var(--chalk-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.failure {
+  margin: 6px 0 0;
+  color: var(--danger-soft);
+  font-size: 12px;
+}
+
+.status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.status[data-status="succeeded"] {
+  color: var(--signal);
+}
+
+.status[data-status="running"] {
+  color: var(--lamp);
+}
+
+.status[data-status="failed"] {
+  color: var(--danger);
+}
+
+.status[data-status="queued"] {
+  color: var(--chalk-faint);
+}
+
+/* 删除按钮压在扩大后的链接点击区之上 */
+.delete {
+  position: relative;
+  z-index: 1;
+  padding: 4px 6px;
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--chalk-faint);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.delete:hover:not(:disabled) {
+  background: var(--ink-sunk);
+  color: var(--danger);
+}
+
+.empty {
+  margin-top: 14px;
+  color: var(--chalk-faint);
+  font-size: 14px;
+}

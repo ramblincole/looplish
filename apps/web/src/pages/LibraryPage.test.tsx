@@ -447,10 +447,11 @@ describe("job list", () => {
     renderLibrary();
 
     const progress = await screen.findByRole("progressbar", { name: "Running Talk 处理进度" });
-    expect(progress).toHaveAttribute("value", "0.5");
+    expect(progress).toHaveAttribute("aria-valuenow", "50");
     expect(progress).toHaveAttribute("aria-valuetext", "50%");
-    expect(screen.getByText("处理中")).toBeInTheDocument();
-    expect(screen.getByText("（转写）")).toBeInTheDocument();
+    expect(screen.getByText("处理中·转写")).toBeInTheDocument();
+    expect(screen.getByText("识别中")).toBeInTheDocument();
+    expect(screen.getByText("已完成").closest("li")).toHaveAttribute("data-status", "succeeded");
     expect(screen.getByText("失败原因：没有可用的人工字幕。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除 Running Talk" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "删除 Broken Talk" })).toBeEnabled();
@@ -503,22 +504,27 @@ describe("job list", () => {
     expect(router.state.location.pathname).toBe("/jobs/0123456789ABCDEF");
   });
 
-  it("deletes only after confirmation", async () => {
-    state.pages = [[job()]];
-    const confirm = vi
-      .spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
+  it("deletes only after confirmation and then moves focus to the list heading", async () => {
+    state.pages = [[job()], []];
     const user = userEvent.setup();
     renderLibrary();
     const button = await screen.findByRole("button", { name: "删除 Everyday Talk" });
 
     await user.click(button);
+    const dialog = screen.getByRole("dialog", { name: "删除素材" });
+    expect(dialog).toHaveTextContent("删除「Everyday Talk」及其全部产物？此操作无法撤销。");
+    await user.click(screen.getByRole("button", { name: "取消" }));
     expect(state.requests.deleted).toEqual([]);
+    expect(button).toHaveFocus();
 
     await user.click(button);
+    await user.click(screen.getByRole("button", { name: "删除" }));
+
     await waitFor(() => expect(state.requests.deleted).toEqual(["0123456789ABCDEF"]));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "已处理的素材" })).toHaveFocus()
+    );
+    expect(screen.getByText("还没有素材。上面粘贴一个链接就能开始。")).toBeInTheDocument();
   });
 
   it("shows one persistent alert when the list cannot load", async () => {
