@@ -32,3 +32,14 @@
   font-size: 20px;
   font-weight: 500;
 }
+
+.toastRegion {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 28px;
+  z-index: var(--z-toast);
+  display: flex;
+  justify-content: center;
+  padding-inline: 16px;
+  pointer-events: none;
+}

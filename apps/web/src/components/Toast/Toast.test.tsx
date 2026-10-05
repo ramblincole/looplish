@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TOAST_DURATION_MS, useToast, type ToastKind } from "./toastContext";
 import { ToastProvider } from "./ToastProvider";
+import { Modal } from "../Modal/Modal";
+import { ModalProvider } from "../Modal/ModalProvider";
 
 function Trigger({ message, kind }: { message: string; kind?: ToastKind }) {
   const notify = useToast();
@@ -65,5 +67,25 @@ describe("Toast", () => {
     expect(screen.getByText("语速 0.90×")).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(1000));
     expect(screen.queryByText("语速 0.90×")).not.toBeInTheDocument();
+  });
+});
+
+describe("Toast inside a modal", () => {
+  it("announces from inside the topmost dialog so aria-modal does not hide it", () => {
+    render(
+      <ModalProvider>
+        <ToastProvider>
+          <Modal open title="正在处理" onClose={() => {}}>
+            <Trigger message="「Coffee Talk」处理完成" />
+          </Modal>
+        </ToastProvider>
+      </ModalProvider>
+    );
+
+    fire("「Coffee Talk」处理完成");
+
+    const dialog = screen.getByRole("dialog", { name: "正在处理" });
+    expect(dialog).toContainElement(screen.getByText("「Coffee Talk」处理完成"));
+    expect(liveness("「Coffee Talk」处理完成")).toBe("polite");
   });
 });

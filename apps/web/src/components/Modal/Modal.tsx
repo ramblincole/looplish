@@ -33,10 +33,16 @@ export function Modal(props: ModalProps) {
 
 function ModalSurface({ onClose, title, returnFocusTo, children }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const politeRef = useRef<HTMLDivElement>(null);
+  const assertiveRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const { register } = useContext(ModalRegistryContext);
 
-  useEffect(() => register(), [register]);
+  useEffect(() => {
+    const polite = politeRef.current;
+    const assertive = assertiveRef.current;
+    return register(polite && assertive ? { polite, assertive } : undefined);
+  }, [register]);
 
   // 监听函数里要用最新的 onClose，又不想因为它变化而反复挂载监听。
   const onCloseRef = useRef(onClose);
@@ -139,6 +145,14 @@ function ModalSurface({ onClose, title, returnFocusTo, children }: ModalProps) {
           {title}
         </h2>
         {children}
+        {/* 弹层打开期间的 toast 在这里播报；内容由 ToastProvider 通过 portal 放入。 */}
+        <div ref={politeRef} className={styles.toastRegion} aria-live="polite" aria-atomic="true" />
+        <div
+          ref={assertiveRef}
+          className={styles.toastRegion}
+          aria-live="assertive"
+          aria-atomic="true"
+        />
       </div>
     </div>,
     document.body
