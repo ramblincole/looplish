@@ -38,7 +38,7 @@ function backoffInterval(failures: number, hidden: boolean): number {
   return Math.min(MAX_BACKOFF_MS, base * 2 ** failures);
 }
 
-export function useJobs() {
+export function useJobs(options: { onFinished?: (job: Job) => void } = {}) {
   const client = useQueryClient();
   const query = useQuery({
     queryKey: ["jobs"],
@@ -54,6 +54,12 @@ export function useJobs() {
     refetchOnWindowFocus: true
   });
 
+  // 回调通过 ref 读取，调用方每次渲染传新函数也不会重跑下面的状态比较。
+  const onFinished = useRef(options.onFinished);
+  useEffect(() => {
+    onFinished.current = options.onFinished;
+  });
+
   // 任务从进行中进入终态时，让它的详情与结果缓存失效，练习台下次读取拿到最新数据。
   const previous = useRef(new Map<string, Job["status"]>());
   useEffect(() => {
@@ -63,6 +69,7 @@ export function useJobs() {
       if (before !== undefined && isActive(before) && !isActive(job.status)) {
         void client.invalidateQueries({ queryKey: ["job", job.id] });
         void client.invalidateQueries({ queryKey: ["jobResult", job.id] });
+        onFinished.current?.(job);
       }
       previous.current.set(job.id, job.status);
     }

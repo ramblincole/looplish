@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -11,7 +11,8 @@ import {
   ACTIVE_POLL_MS,
   HIDDEN_POLL_MS,
   MAX_BACKOFF_MS,
-  pollInterval
+  pollInterval,
+  useJobs
 } from "../features/jobs/useJobs";
 import { installFetchBridge, multipartFields } from "../test/fetchBridge";
 
@@ -521,6 +522,24 @@ describe("polling", () => {
     await act(() => vi.advanceTimersByTimeAsync(10 * ACTIVE_POLL_MS));
 
     expect(state.requests.jobs).toBe(1);
+  });
+
+  it("reports each job once when it leaves the active states", async () => {
+    state.pages = [[job({ status: "running", progress: 0.4 })], [job({ status: "succeeded" })]];
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const finished: string[] = [];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderHook(() => useJobs({ onFinished: (item) => finished.push(item.status) }), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      )
+    });
+
+    await waitFor(() => expect(state.requests.jobs).toBe(1));
+    await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
+    await waitFor(() => expect(finished).toEqual(["succeeded"]));
+    await act(() => vi.advanceTimersByTimeAsync(10 * ACTIVE_POLL_MS));
+    expect(finished).toEqual(["succeeded"]);
   });
 });
 
