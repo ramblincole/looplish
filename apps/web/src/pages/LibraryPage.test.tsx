@@ -659,7 +659,8 @@ describe("progress overlay", () => {
     await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
     expect(await screen.findByRole("dialog", { name: "处理完成 · 共 24 句" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始练习" })).toHaveFocus();
-    // 浮层正在展示这个任务，不再额外弹出完成提示。
+    // 浮层正在展示这个任务，不再额外弹出完成提示。先冲刷 effect，否则可能在 toast 发出之前就断言了。
+    await act(async () => {});
     expect(screen.queryByText("「Everyday Talk」处理完成")).not.toBeInTheDocument();
 
     // 进入练习台后会请求任务与结果；这里只验证跳转，给出最小响应避免未处理请求。
@@ -669,7 +670,10 @@ describe("progress overlay", () => {
     );
     await user.click(screen.getByRole("button", { name: "开始练习" }));
     // 路由跳转是异步提交的，点击返回时 location 可能还没更新，所以等待而不是立即断言。
-    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/jobs/0123456789ABCDEF"));
+    // 练习台路由是懒加载的，冷启动时首次加载可能超过默认的 1 秒，所以放宽超时。
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/jobs/0123456789ABCDEF"), {
+      timeout: 5000
+    });
   });
 
   it("shows the failure reason", async () => {
@@ -710,6 +714,8 @@ describe("progress overlay", () => {
     await submitUrl(user);
     await user.click(await screen.findByRole("button", { name: "放到后台" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // 等列表拿到运行中的任务（此时轮询定时器才存在），再推进时间。
+    await screen.findByText("处理中");
 
     await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
     expect(await screen.findByText("「Everyday Talk」处理完成")).toBeInTheDocument();
