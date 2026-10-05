@@ -23,10 +23,13 @@ export function formatDuration(seconds: number): string {
   return `${seconds.toFixed(1)}s`;
 }
 
-/** 句子清单里的起始时间「1:03」。 */
+/** 句子清单里的开始发声时间：四舍五入到整秒，「01:04」；满一小时为「1:02:05」。 */
 export function formatStart(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(total / 60)}:${pad2(total % 60)}`;
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = pad2(total % 60);
+  return hours > 0 ? `${hours}:${pad2(minutes)}:${rest}` : `${pad2(minutes)}:${rest}`;
 }
 
 /** 当前循环轮次：playCount 是本句已完整听完的轮数，正在播放的是下一轮。 */

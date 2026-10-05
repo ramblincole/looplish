@@ -1,21 +1,27 @@
 import type { ComponentPropsWithRef } from "react";
 import { Button } from "../../components/Button/Button";
+import { HOTKEY_BINDINGS, type HotkeyAction } from "./hotkeys";
 import { usePlayer, usePlayerActions } from "./playerContext";
 import styles from "./Transport.module.css";
+
+/** 按钮提示里的按键名来自唯一的按键表，改键时提示自动跟随。 */
+function hotkeyLabel(action: HotkeyAction): string {
+  return HOTKEY_BINDINGS.find((binding) => binding.action === action)?.label ?? "";
+}
 
 type TransportButtonProps = ComponentPropsWithRef<"button"> & {
   label: string;
   icon: string;
-  hotkey: string;
+  action: HotkeyAction;
   main?: boolean;
 };
 
 /** 方块走带按钮：图标对读屏隐藏，读屏名称来自隐藏文字，悬停提示带上快捷键。 */
-function TransportButton({ label, icon, hotkey, main = false, ...rest }: TransportButtonProps) {
+function TransportButton({ label, icon, action, main = false, ...rest }: TransportButtonProps) {
   return (
     <Button
       variant={main ? "transportMain" : "transport"}
-      title={`${label}（${hotkey}）`}
+      title={`${label}（${hotkeyLabel(action)}）`}
       {...rest}
     >
       <span aria-hidden="true">{icon}</span>
@@ -34,7 +40,7 @@ export function Transport() {
       <TransportButton
         label="上一句"
         icon="◀◀"
-        hotkey="←"
+        action="previous"
         onClick={actions.previous}
         disabled={sentenceIndex === 0}
         aria-keyshortcuts="ArrowLeft"
@@ -43,21 +49,21 @@ export function Transport() {
         main
         label={playing ? "暂停" : "播放"}
         icon={playing ? "❚❚" : "▶"}
-        hotkey="空格"
+        action="togglePlaying"
         onClick={actions.togglePlaying}
         aria-keyshortcuts="Space"
       />
       <TransportButton
         label="重听"
         icon="↻"
-        hotkey="R"
+        action="replay"
         onClick={actions.replay}
         aria-keyshortcuts="R"
       />
       <TransportButton
         label="下一句"
         icon="▶▶"
-        hotkey="→"
+        action="next"
         onClick={actions.next}
         disabled={sentenceIndex + 1 >= sentenceCount}
         aria-keyshortcuts="ArrowRight"
@@ -68,7 +74,7 @@ export function Transport() {
         onClick={actions.toggleReveal}
         aria-pressed={revealed}
         aria-keyshortcuts="Enter"
-        title="显示 / 遮住原文（Enter）"
+        title={`显示 / 隐藏原文（${hotkeyLabel("toggleReveal")}）`}
       >
         {revealed ? "遮住原文" : "显示原文"}
       </Button>

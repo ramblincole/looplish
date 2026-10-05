@@ -44,6 +44,12 @@
   font-size: 13px;
 }
 
+.notice {
+  margin: 12px 0 0;
+  color: var(--chalk-dim);
+  font-size: 13px;
+}
+
 .note {
   max-inline-size: 760px;
   margin: 14px auto;

@@ -357,6 +357,7 @@ describe("loading states", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("没有找到指定任务。");
     expect(state.requests.job).toBe(1);
     expect(screen.getByRole("link", { name: "← 素材库" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("heading", { level: 1, name: "无法打开练习" })).toBeInTheDocument();
   });
   it("keeps the player and its progress when a background refresh of the job fails", async () => {
     const { client } = renderPractice();
@@ -849,7 +850,7 @@ describe("sentence reel", () => {
     await ready();
     // 盲听时列表原文模糊并对读屏隐藏，行的读屏名称只剩序号与时间。
     expect(screen.getByText("How are you?")).toHaveAttribute("aria-hidden", "true");
-    expect(screen.getByRole("button", { name: /^第 2 句\s*0:02$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^第 2 句\s*00:03$/ })).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("搜索句子"), "how");
 
@@ -877,6 +878,10 @@ describe("resegment and export", () => {
     const user = userEvent.setup();
     renderPractice();
     await ready();
+    // 先听完第 1 句，让「听了 N 次」在重置前为 1。
+    fireEvent.click(playButton());
+    playTo(2.0);
+    expect(document.querySelector("[data-readout='listens']")).toHaveTextContent("听了 1 次");
     key("ArrowRight");
     const jobRequests = state.requests.job;
 
@@ -896,8 +901,10 @@ describe("resegment and export", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(state.requests.resegment).toEqual([{ maxDuration: 2 }]);
+    expect(await screen.findByText("重新切分完成，共 4 句")).toBeInTheDocument();
     expect(heading()).toBe("第 1 / 4 句");
     expect(screen.getByText("已练 0 / 4")).toBeInTheDocument();
+    expect(document.querySelector("[data-readout='listens']")).toHaveTextContent("听了 0 次");
     // 新结果直接写入缓存，不再请求 result；Job 的句子数交给服务端刷新。
     expect(state.requests.result).toBe(1);
     await waitFor(() => expect(state.requests.job).toBeGreaterThan(jobRequests));

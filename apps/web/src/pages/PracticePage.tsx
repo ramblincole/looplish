@@ -48,8 +48,10 @@ export function PracticePage() {
       {jobId ? (
         <PracticeLoader jobId={jobId} />
       ) : (
-        <StateCard>
-          <p role="alert">缺少任务编号。</p>
+        <StateCard title="无法打开练习">
+          <p role="alert" className={styles.failure}>
+            缺少任务编号。
+          </p>
         </StateCard>
       )}
     </main>
@@ -74,8 +76,10 @@ function PracticeLoader({ jobId }: { jobId: string }) {
       );
     }
     return (
-      <StateCard>
-        <p role="alert">{errorMessage(job.error)}</p>
+      <StateCard title="无法打开练习">
+        <p role="alert" className={styles.failure}>
+          {errorMessage(job.error)}
+        </p>
       </StateCard>
     );
   }
@@ -109,8 +113,10 @@ function PracticeLoader({ jobId }: { jobId: string }) {
       );
     }
     return (
-      <StateCard>
-        <p role="alert">{errorMessage(result.error)}</p>
+      <StateCard title="无法打开练习">
+        <p role="alert" className={styles.failure}>
+          {errorMessage(result.error)}
+        </p>
       </StateCard>
     );
   }
@@ -123,22 +129,16 @@ function PracticeLoader({ jobId }: { jobId: string }) {
     );
   }
 
-  // 提示与播放器的位置固定，提示出现或消失都不会让播放器重新挂载、丢失练习进度。
+  // 刷新失败的提示放进工作区内部，PlayerProvider 始终是唯一的子路径，
+  // 提示出现或消失都不会让播放器重新挂载、丢失练习进度。
   return (
-    <>
-      {job.isError || result.isError ? (
-        <p role="status" className={styles.note}>
-          暂时无法从服务刷新任务状态，页面显示的是上次加载的内容。
-        </p>
-      ) : null}
-      <PlayerProvider result={data}>
-        <PracticeWorkspace result={data} />
-      </PlayerProvider>
-    </>
+    <PlayerProvider result={data}>
+      <PracticeWorkspace result={data} stale={job.isError || result.isError} />
+    </PlayerProvider>
   );
 }
 
-function PracticeWorkspace({ result }: { result: JobResult }) {
+function PracticeWorkspace({ result, stale }: { result: JobResult; stale: boolean }) {
   const { state, send, completed, playhead } = usePlayer();
   const actions = usePlayerActions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -201,6 +201,11 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
         {playbackError ? (
           <p role="alert" className={styles.failure}>
             {playbackError}
+          </p>
+        ) : null}
+        {stale ? (
+          <p role="status" className={styles.notice}>
+            暂时无法从服务刷新任务状态，页面显示的是上次加载的内容。
           </p>
         ) : null}
         <Transport />

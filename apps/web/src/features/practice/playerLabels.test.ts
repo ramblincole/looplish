@@ -12,10 +12,18 @@ describe("playerLabels", () => {
     expect(formatClock(seconds)).toBe(expected);
   });
 
-  it("formats sentence durations and start times", () => {
+  it("formats sentence durations", () => {
     expect(formatDuration(2.94)).toBe("2.9s");
-    expect(formatStart(3.2)).toBe("0:03");
-    expect(formatStart(63.9)).toBe("1:03");
+  });
+
+  it.each([
+    [3.2, "00:03"],
+    [63.9, "01:04"],
+    [3599.6, "1:00:00"],
+    [3725, "1:02:05"],
+    [-1, "00:00"]
+  ])("formatStart(%s) = %s", (seconds, expected) => {
+    expect(formatStart(seconds)).toBe(expected);
   });
 
   it("caps the loop round at the repeat count and marks infinite loops", () => {

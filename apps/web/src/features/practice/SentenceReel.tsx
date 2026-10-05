@@ -64,11 +64,10 @@ export function SentenceReel({ sentences }: { sentences: Sentence[] }) {
                 onClick={() => send({ type: "select", index: sentence.index })}
               >
                 <span className={styles.index}>
-                  <span className="visuallyHidden">第 </span>
-                  {sentence.index + 1}
-                  <span className="visuallyHidden"> 句</span>
+                  <span aria-hidden="true">{String(sentence.index + 1).padStart(3, "0")}</span>
+                  <span className="visuallyHidden">第 {sentence.index + 1} 句</span>
                 </span>
-                <span className={styles.time}>{formatStart(sentence.start)}</span>
+                <span className={styles.time}>{formatStart(sentence.speechStart)}</span>
                 <span
                   className={styles.text}
                   data-blurred={blurred || undefined}

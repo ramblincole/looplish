@@ -34,6 +34,8 @@
 }
 
 .shell[data-veiled="true"] .word {
+  /* 高对比度模式会强制显示透明文字，遮罩必须保留作者配色 */
+  forced-color-adjust: none;
   color: transparent;
   background: var(--ink-line);
 }

@@ -3,6 +3,7 @@ import type { ResegmentRequest } from "../../api/types";
 import { Button } from "../../components/Button/Button";
 import { Field } from "../../components/Field/Field";
 import { Modal } from "../../components/Modal/Modal";
+import { useToast } from "../../components/Toast/toastContext";
 import { errorMessage, SEGMENT_LIMITS, type SegmentField } from "../intake/processing";
 import { useResegment } from "../jobs/useJobs";
 import { usePlayer } from "./playerContext";
@@ -51,6 +52,7 @@ export function ResegmentDialog({
 }) {
   const { send } = usePlayer();
   const resegment = useResegment(jobId);
+  const notify = useToast();
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const { issues, body } = toOverrides(draft);
@@ -66,11 +68,13 @@ export function ResegmentDialog({
     event.preventDefault();
     if (!filled || issues.length > 0) return;
     resegment.mutate(body, {
-      onSuccess: () => {
+      onSuccess: (next) => {
         // 新结果的句子索引与旧结果无关，播放器回到第 0 句重新开始。
         send({ type: "reset" });
         setDraft(EMPTY);
         onOpenChange(false);
+        // 弹层已关闭，结果只能靠 toast 告知用户（spec 8.4）。
+        notify(`重新切分完成，共 ${next.sentences.length} 句`);
       }
     });
   }
