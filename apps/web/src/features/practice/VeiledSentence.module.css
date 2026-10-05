@@ -1,0 +1,44 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-block-size: clamp(140px, 22vh, 220px);
+  padding: 22px 0 18px;
+}
+
+.sentence {
+  margin: 0;
+  font-family: var(--font-read);
+  font-size: clamp(20px, 2.5vw, 30px);
+  line-height: 1.75;
+  letter-spacing: 0.005em;
+  word-spacing: 0.08em;
+}
+
+.word {
+  padding: 0 0.04em;
+  border-radius: 3px;
+  transition:
+    color var(--dur-base) ease,
+    background-color 0.09s linear;
+}
+
+/* 揭晓状态：正在读的词点亮成琥珀色 */
+.word[data-active="true"] {
+  color: var(--lamp);
+}
+
+/* 遮罩状态：词变成与自身长度一致的色块，只剩节奏；禁止选中，避免复制出原文 */
+.shell[data-veiled="true"] .sentence {
+  user-select: none;
+}
+
+.shell[data-veiled="true"] .word {
+  color: transparent;
+  background: var(--ink-line);
+}
+
+.shell[data-veiled="true"] .word[data-active="true"] {
+  color: transparent;
+  background: var(--lamp);
+}

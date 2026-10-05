@@ -8,9 +8,11 @@ import { isActive, useJob, useJobResult } from "../features/jobs/useJobs";
 import { ExportMenu } from "../features/practice/ExportMenu";
 import { PlayerProvider } from "../features/practice/PlayerProvider";
 import { PracticeControls } from "../features/practice/PracticeControls";
+import { Readout } from "../features/practice/Readout";
 import { ResegmentDialog } from "../features/practice/ResegmentDialog";
+import { SentenceProgress } from "../features/practice/SentenceProgress";
 import { SentenceReel } from "../features/practice/SentenceReel";
-import { VeiledTranscript } from "../features/practice/VeiledTranscript";
+import { VeiledSentence } from "../features/practice/VeiledSentence";
 import { usePlayer, usePlayerActions } from "../features/practice/playerContext";
 import { formatRate, formatRepeat } from "../features/practice/playerLabels";
 import { clampRate, nextRepeat, stepRate } from "../features/practice/playerReducer";
@@ -118,7 +120,7 @@ function PracticeLoader({ jobId }: { jobId: string }) {
 }
 
 function PracticeWorkspace({ result }: { result: JobResult }) {
-  const { state, sentenceCount, send, completed, playhead } = usePlayer();
+  const { state, send, completed, playhead } = usePlayer();
   const actions = usePlayerActions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -179,10 +181,13 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
       <div className="workspace">
         <SentenceReel sentences={result.sentences} />
         <section className="stage" aria-labelledby="current-sentence-title">
-          <h2 id="current-sentence-title">
-            第 {state.sentenceIndex + 1} / {sentenceCount} 句
-          </h2>
-          {sentence ? <VeiledTranscript sentence={sentence} revealed={state.revealed} /> : null}
+          {sentence ? (
+            <>
+              <Readout sentence={sentence} />
+              <VeiledSentence sentence={sentence} revealed={state.revealed} />
+              <SentenceProgress start={sentence.start} end={sentence.end} />
+            </>
+          ) : null}
           <button
             type="button"
             className="secondary"

@@ -24,11 +24,9 @@ function parseGap(value: string): GapMode {
 }
 
 export function PracticeControls() {
-  const { state, sentenceCount, waiting, send } = usePlayer();
+  const { state, sentenceCount, send } = usePlayer();
   const actions = usePlayerActions();
-  const { sentenceIndex, playing, playCount, repeat, rate, gapMode, autoAdvance, alwaysHide } =
-    state;
-  const round = playCount + 1;
+  const { sentenceIndex, playing, repeat, rate, gapMode, autoAdvance, alwaysHide } = state;
 
   return (
     <section className="controls" aria-label="播放控制">
@@ -61,13 +59,6 @@ export function PracticeControls() {
           下一句
         </button>
       </div>
-      {/* 播放进度用文字表达，读屏软件会在循环轮次或留白状态变化时播报。 */}
-      <p className="play-status" role="status">
-        {repeat === "infinite"
-          ? `第 ${round} 遍（无限循环）`
-          : `第 ${Math.min(round, repeat)} / ${repeat} 遍`}
-        {waiting ? " · 跟读留白中…" : null}
-      </p>
       <div className="settings">
         <label>
           循环次数

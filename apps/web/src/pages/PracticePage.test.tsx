@@ -292,11 +292,11 @@ async function ready(total = 3) {
 
 const heading = () => document.getElementById("current-sentence-title")?.textContent;
 const playButton = () => screen.getByRole("button", { name: /^(播放|暂停)$/ });
-const transcript = () => document.querySelector(".transcript") as HTMLElement;
-const activeWord = () => transcript().querySelector("[aria-current='true']")?.textContent ?? null;
+const transcript = () => document.querySelector("[data-sentence]") as HTMLElement;
+const activeWord = () => transcript().querySelector("[data-active='true']")?.textContent ?? null;
 const key = (value: string, target: Element = document.body, init: KeyboardEventInit = {}) =>
   fireEvent.keyDown(target, { key: value, ...init });
-const playStatus = () => document.querySelector(".play-status")?.textContent;
+const playStatus = () => document.querySelector("[data-readout='loop']")?.textContent;
 
 describe("loading states", () => {
   it("polls a queued job without requesting its result, then opens the player", async () => {
@@ -456,20 +456,42 @@ describe("audio boundaries", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(playButton()).toHaveTextContent("暂停");
   });
+
+  it("shows where the playhead is within the sentence and how often it was heard", async () => {
+    renderPractice();
+    await ready();
+    const readout = (name: string) => document.querySelector(`[data-readout='${name}']`);
+    expect(readout("duration")).toHaveTextContent("1.7s");
+    expect(readout("listens")).toHaveTextContent("听了 0 次");
+
+    fireEvent.click(playButton());
+    playTo(1.15);
+    expect(readout("time")).toHaveTextContent("00:00.8");
+    const fill = document.querySelector("[data-sentence-progress] > *") as HTMLElement;
+    expect(fill.style.inlineSize).toBe("50%");
+
+    playTo(2.0);
+    expect(readout("listens")).toHaveTextContent("听了 1 次");
+  });
 });
 
 describe("veiled transcript", () => {
-  it("hides the text by default with word-sized blocks and reveals it with Enter", async () => {
+  it("veils the words in place and reveals them with Enter", async () => {
     renderPractice();
     await ready();
 
+    expect(transcript()).toHaveAttribute("data-veiled", "true");
     expect(within(transcript()).getByText("文本已隐藏，共 2 个词。")).toBeInTheDocument();
-    const blocks = transcript().querySelectorAll<HTMLElement>(".word--veiled");
-    expect([...blocks].map((block) => block.style.inlineSize)).toEqual(["5ch", "6ch"]);
-    expect(transcript()).not.toHaveTextContent("Hello");
+    // 词留在页面上撑出真实宽度，但整段对读屏隐藏。
+    expect(within(transcript()).getByText("Hello").closest("p")).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
 
     key("Enter");
 
+    expect(transcript()).toHaveAttribute("data-veiled", "false");
+    expect(within(transcript()).getByText("Hello").closest("p")).not.toHaveAttribute("aria-hidden");
     expect(transcript()).toHaveTextContent("Hello there.");
     expect(screen.getByRole("button", { name: "隐藏文本" })).toHaveAttribute(
       "aria-pressed",
@@ -505,6 +527,7 @@ describe("veiled transcript", () => {
     fireEvent.click(screen.getByLabelText("切换句子时重新隐藏文本"));
     key("Enter");
     key("ArrowRight");
+    expect(transcript()).toHaveAttribute("data-veiled", "false");
     expect(transcript()).toHaveTextContent("Bye.");
   });
 
@@ -518,6 +541,7 @@ describe("veiled transcript", () => {
     fireEvent.click(playButton());
     playTo(0.6);
 
+    expect(transcript()).toHaveAttribute("data-veiled", "false");
     expect(transcript()).toHaveTextContent("Hello there.");
     expect(activeWord()).toBeNull();
   });
@@ -550,7 +574,7 @@ describe("loops, gaps and auto advance", () => {
 
     fireEvent.click(playButton());
     playTo(2.0);
-    expect(playStatus()).toBe("第 2 / 2 遍 · 跟读留白中…");
+    expect(playStatus()).toBe("循环 2/2 · 跟读中");
 
     act(() => vi.advanceTimersByTime(999));
     expect(media.plays).toBe(1);
@@ -559,7 +583,7 @@ describe("loops, gaps and auto advance", () => {
     expect(media.seeks.at(-1)).toBe(0.3);
 
     playTo(2.0);
-    expect(playStatus()).toBe("第 1 / 2 遍");
+    expect(playStatus()).toBe("循环 1/2");
     act(() => vi.advanceTimersByTime(10_000));
     expect(media.plays).toBe(2);
   });
@@ -577,7 +601,7 @@ describe("loops, gaps and auto advance", () => {
       act(() => vi.advanceTimersByTime(0));
       expect(media.plays).toBe(round);
     }
-    expect(playStatus()).toBe("第 4 遍（无限循环）");
+    expect(playStatus()).toBe("循环 4/∞");
 
     key(" ");
     expect(media.paused).toBe(true);
@@ -633,7 +657,7 @@ describe("loops, gaps and auto advance", () => {
     act(() => vi.advanceTimersByTime(5000));
 
     expect(media.plays).toBe(1);
-    expect(playStatus()).toBe("第 1 / 2 遍");
+    expect(playStatus()).toBe("循环 1/2");
     expect(screen.getByRole("button", { name: /^第 2 句/ })).toHaveAttribute(
       "aria-current",
       "true"

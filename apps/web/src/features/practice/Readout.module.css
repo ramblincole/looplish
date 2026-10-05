@@ -1,0 +1,58 @@
+/* 读数条：全等宽字体，像机器上的计数窗 */
+.readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--ink-line);
+  color: var(--chalk-faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.readout em {
+  color: var(--chalk);
+  font-size: 15px;
+  font-style: normal;
+}
+
+.index {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.index em {
+  color: var(--lamp);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.of {
+  margin: 0 3px;
+}
+
+.item {
+  white-space: nowrap;
+}
+
+.lamp {
+  color: var(--lamp);
+}
+
+.time {
+  margin-left: auto;
+  color: var(--chalk-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.duration {
+  color: var(--chalk-faint);
+}
+
+@media (width <= 960px) {
+  .time {
+    margin-left: 0;
+  }
+}
