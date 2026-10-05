@@ -152,7 +152,7 @@ type ModalProps = {
 
 - `ToastProvider` 放在 AppShell；`useToast()` 返回 `notify(message, kind?: "info" | "error")`。
 - 一次只显示一条，新提示替换旧提示；info 3 秒、error 6 秒自动消失。
-- 容器是常驻的 live region（info 为 `role="status"`，error 为 `role="alert"`）。
+- 容器是常驻的两个播报区：info 用 `aria-live="polite"`，error 用 `aria-live="assertive"`。不使用 `role="status"` / `role="alert"`，避免与页面里已有的状态、警告角色重名。
 - 使用场景：快捷键操作反馈、重新切分完成、后台任务完成或失败。表单校验与提交错误仍显示在表单旁。
 
 ### 5.6 ProgressBar

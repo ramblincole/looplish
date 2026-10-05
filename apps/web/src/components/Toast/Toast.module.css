@@ -1,0 +1,28 @@
+.viewport {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 28px;
+  z-index: var(--z-toast);
+  display: flex;
+  justify-content: center;
+  padding-inline: 16px;
+  pointer-events: none;
+}
+
+.toast {
+  max-inline-size: min(560px, calc(100vw - 32px));
+  margin: 0;
+  padding: 11px 18px;
+  background: var(--ink-raised);
+  border: 1px solid var(--ink-line-2);
+  border-radius: var(--r-md);
+  color: var(--chalk);
+  font-size: 13.5px;
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
+}
+
+.toast[data-kind="error"] {
+  border-color: var(--danger);
+  color: var(--danger-soft);
+}
