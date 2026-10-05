@@ -41,8 +41,8 @@ export function SettingsDrawer({ value, onChange, config, issues }: Props) {
   const languagesId = useId();
   const [open, setOpen] = useState(false);
   const update = (patch: Partial<ProcessingValues>) => onChange({ ...value, ...patch });
-  // 参数冲突时强制展开，用户能直接看到原因；自动展开会触发 toggle 并记为已展开，
-  // 所以冲突解除后保持展开，直到用户自己收起。
+  // 参数冲突时强制展开且不允许收起（两个提交按钮此时都被禁用，收起会藏起原因）；
+  // 自动展开会触发 toggle 并记为已展开，所以冲突解除后保持展开，直到用户自己收起。
   const expanded = open || issues.length > 0;
   const unordered = value.minDuration >= value.maxDuration;
 
@@ -50,7 +50,12 @@ export function SettingsDrawer({ value, onChange, config, issues }: Props) {
     <details
       className={styles.drawer}
       open={expanded}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onToggle={(event) => {
+        const details = event.currentTarget;
+        // 有冲突时把刚收起的抽屉重新打开；受控的 open 属性不会替我们撤销原生的收起。
+        if (!details.open && issues.length > 0) details.open = true;
+        setOpen(details.open);
+      }}
     >
       <summary className={styles.summary}>识别与切分设置</summary>
       <div className={styles.grid}>

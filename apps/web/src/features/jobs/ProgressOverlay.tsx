@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import type { Job } from "../../api/types";
 import { Button } from "../../components/Button/Button";
@@ -12,6 +12,8 @@ type Props = {
   /** 正在跟踪的任务；为 null 时浮层关闭。 */
   job: Job | null;
   onClose: () => void;
+  /** 浮层关闭后接收焦点的元素；触发上传的按钮在任务开始后已不在，需要一个新的落点。 */
+  returnFocusTo?: RefObject<HTMLElement | null>;
 };
 
 function titleOf(job: Job): string {
@@ -20,7 +22,7 @@ function titleOf(job: Job): string {
   return "正在处理";
 }
 
-export function ProgressOverlay({ job, onClose }: Props) {
+export function ProgressOverlay({ job, onClose, returnFocusTo }: Props) {
   const navigate = useNavigate();
   const primary = useRef<HTMLButtonElement>(null);
   const status = job?.status;
@@ -34,7 +36,7 @@ export function ProgressOverlay({ job, onClose }: Props) {
   const active = isActive(job.status);
 
   return (
-    <Modal open onClose={onClose} title={titleOf(job)}>
+    <Modal open onClose={onClose} title={titleOf(job)} returnFocusTo={returnFocusTo}>
       <p className={styles.jobTitle}>{job.title}</p>
       {active ? <ProgressBar value={job.progress} label="处理进度" /> : null}
       {/* 状态变化由这里播报；标题变化不会被读屏可靠地朗读。 */}

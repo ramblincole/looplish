@@ -88,7 +88,7 @@ export function LibraryPage() {
           <JobList jobs={jobs.data.items} onDeleted={() => jobsHeading.current?.focus()} />
         ) : null}
       </section>
-      <ProgressOverlay job={live} onClose={() => setTracked(null)} />
+      <ProgressOverlay job={live} onClose={() => setTracked(null)} returnFocusTo={jobsHeading} />
     </main>
   );
 }

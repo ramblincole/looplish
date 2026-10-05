@@ -21,7 +21,13 @@ export function JobList({ jobs, onDeleted }: Props) {
     const target = pending;
     setPending(null);
     // useDeleteJob 的 onSuccess 会等列表刷新完成，这里的回调在被删行消失之后才执行。
-    if (target) remove.mutate(target.id, { onSuccess: onDeleted });
+    if (target) {
+      remove.mutate(target.id, {
+        onSuccess: onDeleted,
+        // 删除失败时被删行还在，把焦点送回它的删除按钮。
+        onError: () => trigger.current?.focus()
+      });
+    }
   }
 
   return (

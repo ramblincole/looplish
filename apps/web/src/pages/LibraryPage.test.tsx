@@ -410,6 +410,24 @@ describe("submission", () => {
     expect(state.requests.created).toEqual([]);
   });
 
+  it("keeps the settings drawer open while blocking reasons are showing", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+    const drawer = screen.getByText("识别与切分设置").closest("details")!;
+
+    setSlider("最短句长", "8");
+    setSlider("最长句长", "8");
+    expect(drawer).toHaveAttribute("open");
+
+    // 提交按钮仍被禁用时不允许收起，否则用户看不到原因。
+    await user.click(screen.getByText("识别与切分设置"));
+
+    expect(drawer).toHaveAttribute("open");
+    expect(screen.getByRole("alert")).toHaveTextContent("最短句长必须小于最长句长。");
+    expect(screen.getByRole("alert")).toBeVisible();
+  });
+
   it("offers only the backends the server reports", async () => {
     renderLibrary();
     await ready();
@@ -698,6 +716,24 @@ describe("progress overlay", () => {
     expect(dialog).toHaveTextContent("无法下载该媒体。");
     await user.click(screen.getByRole("button", { name: "关闭" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("returns focus to the library heading when the overlay is closed", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await user.upload(
+      screen.getByLabelText("选择本地文件"),
+      new File(["x"], "a.mp3", { type: "audio/mpeg" })
+    );
+    await user.click(screen.getByRole("button", { name: "上传并处理" }));
+    await screen.findByRole("dialog", { name: "正在处理" });
+
+    await user.click(screen.getByRole("button", { name: "放到后台" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "已处理的素材" })).toHaveFocus();
   });
 
   it("toasts once when a backgrounded job finishes", async () => {

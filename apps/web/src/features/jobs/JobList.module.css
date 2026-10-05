@@ -109,6 +109,11 @@
 .delete {
   position: relative;
   z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 24px;
+  min-block-size: 24px;
   padding: 4px 6px;
   background: none;
   border: none;

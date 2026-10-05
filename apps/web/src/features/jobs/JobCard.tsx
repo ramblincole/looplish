@@ -32,8 +32,8 @@ export function JobCard({ job, deleting, onDelete }: Props) {
             <span className={styles.message}>{job.message}</span>
           </div>
         ) : null}
-        {job.status === "failed" && job.error ? (
-          <p className={styles.failure}>失败原因：{job.error.detail}</p>
+        {job.status === "failed" ? (
+          <p className={styles.failure}>失败原因：{job.error?.detail ?? job.message}</p>
         ) : null}
       </div>
       <span className={styles.status} data-status={job.status}>
