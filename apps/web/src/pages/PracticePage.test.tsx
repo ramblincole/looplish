@@ -10,6 +10,28 @@ import { routes } from "../app/router";
 import { ACTIVE_POLL_MS } from "../features/jobs/useJobs";
 import { installFetchBridge } from "../test/fetchBridge";
 
+const renders = vi.hoisted(() => ({ reel: 0, controls: 0 }));
+
+vi.mock("../features/practice/SentenceReel", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../features/practice/SentenceReel")>();
+  return {
+    SentenceReel: (props: Parameters<typeof actual.SentenceReel>[0]) => {
+      renders.reel += 1;
+      return actual.SentenceReel(props);
+    }
+  };
+});
+
+vi.mock("../features/practice/PracticeControls", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../features/practice/PracticeControls")>();
+  return {
+    PracticeControls: () => {
+      renders.controls += 1;
+      return actual.PracticeControls();
+    }
+  };
+});
+
 const JOB_ID = "JOB1234567890";
 
 type Sentence = JobResult["sentences"][number];
@@ -498,6 +520,21 @@ describe("veiled transcript", () => {
 
     expect(transcript()).toHaveTextContent("Hello there.");
     expect(activeWord()).toBeNull();
+  });
+
+  it("re-renders only playhead consumers while the audio advances", async () => {
+    renderPractice();
+    await ready();
+    key("Enter");
+    fireEvent.click(playButton());
+    const before = { ...renders };
+
+    playTo(0.6);
+    playTo(0.95);
+    playTo(1.2);
+
+    expect(activeWord()).toBe("there.");
+    expect(renders).toEqual(before);
   });
 });
 

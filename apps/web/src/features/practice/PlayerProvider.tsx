@@ -8,12 +8,15 @@ import {
   type ReactNode
 } from "react";
 import type { JobResult } from "../../api/types";
+import { createPlayhead } from "./playhead";
 import { PlayerContext, type PlayerContextValue } from "./playerContext";
 import { initialPlayerState, playerReducer, type PlayerEvent } from "./playerReducer";
 
 export function PlayerProvider({ result, children }: { result: JobResult; children: ReactNode }) {
   const [state, dispatch] = useReducer(playerReducer, initialPlayerState);
   const [waiting, setWaiting] = useState(false);
+  // 每个练习台只创建一次；重新切句后由 AudioController 在定位句首时更新时间。
+  const [playhead] = useState(() => createPlayhead(result.sentences[0]?.start ?? 0));
   // completed 由 RAF 回调触发，需要读取最新已提交状态，而不是闭包中的旧值。
   const stateRef = useRef(state);
   const gapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -76,8 +79,8 @@ export function PlayerProvider({ result, children }: { result: JobResult; childr
   }, [clearGap, result.sentences, sentenceCount]);
 
   const value = useMemo<PlayerContextValue>(
-    () => ({ state, sentenceCount, waiting, send, completed }),
-    [state, sentenceCount, waiting, send, completed]
+    () => ({ state, sentenceCount, waiting, send, completed, playhead }),
+    [state, sentenceCount, waiting, send, completed, playhead]
   );
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;

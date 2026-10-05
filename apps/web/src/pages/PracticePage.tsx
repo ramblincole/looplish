@@ -124,7 +124,7 @@ function PracticeLoader({ jobId }: { jobId: string }) {
 }
 
 function PracticeWorkspace({ result }: { result: JobResult }) {
-  const { state, sentenceCount, send, completed } = usePlayer();
+  const { state, sentenceCount, send, completed, playhead } = usePlayer();
   const actions = usePlayerActions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -142,7 +142,7 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
     if (state.playing) setPlaybackError(null);
   }, [state.playing]);
 
-  const { time } = useAudioController(audioRef, sentence, state, completed, onPlaybackError);
+  useAudioController(audioRef, sentence, state, playhead, completed, onPlaybackError);
 
   const notify = useToast();
   // 快捷键改设置时看不到控件变化，用 toast 告知新值。新值按当前已提交状态推算，
@@ -188,9 +188,7 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
           <h2 id="current-sentence-title">
             第 {state.sentenceIndex + 1} / {sentenceCount} 句
           </h2>
-          {sentence ? (
-            <VeiledTranscript sentence={sentence} revealed={state.revealed} currentTime={time} />
-          ) : null}
+          {sentence ? <VeiledTranscript sentence={sentence} revealed={state.revealed} /> : null}
           <button
             type="button"
             className="secondary"

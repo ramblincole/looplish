@@ -1,4 +1,5 @@
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useMemo, useSyncExternalStore } from "react";
+import type { Playhead } from "./playhead";
 import type { PlayerEvent, PlayerState } from "./playerReducer";
 
 export type PlayerContextValue = {
@@ -10,6 +11,8 @@ export type PlayerContextValue = {
   send: (event: PlayerEvent) => void;
   /** 由 AudioController 在到达 sentence.end 时调用。 */
   completed: () => void;
+  /** 音频当前时间；只在需要逐帧更新的组件里通过 usePlayhead 订阅。 */
+  playhead: Playhead;
 };
 
 export const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -19,6 +22,11 @@ export function usePlayer(): PlayerContextValue {
   // 在 Provider 外读取播放器状态属于组合错误，直接暴露而不是返回默认值掩盖问题。
   if (value === null) throw new Error("usePlayer must be used inside <PlayerProvider>");
   return value;
+}
+
+export function usePlayhead(): number {
+  const { playhead } = usePlayer();
+  return useSyncExternalStore(playhead.subscribe, playhead.get);
 }
 
 export type PlayerActions = {

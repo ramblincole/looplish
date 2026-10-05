@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type { JobResult } from "../../api/types";
+import type { Playhead } from "./playhead";
 import type { PlayerState } from "./playerReducer";
 
 type Sentence = JobResult["sentences"][number];
@@ -7,18 +8,18 @@ type Sentence = JobResult["sentences"][number];
 /**
  * 独占 HTMLAudioElement 的副作用：定位、播放、暂停、倍速，以及用 RAF 检查句末边界。
  * 组件只通过 reducer 状态驱动它，它只向上报告「句子完成」或「播放失败」。
- * onCompleted 与 onPlaybackError 必须是稳定引用，否则每帧的 setTime 渲染都会重启播放 effect。
+ * onCompleted 与 onPlaybackError 必须是稳定引用，否则父组件重渲染时会重启播放 effect。
  */
 export function useAudioController(
   audioRef: RefObject<HTMLAudioElement | null>,
   sentence: Sentence | undefined,
   state: Pick<PlayerState, "playing" | "rate" | "replayCount">,
+  playhead: Playhead,
   onCompleted: () => void,
   onPlaybackError: (error: unknown) => void
 ) {
   const frame = useRef<number | null>(null);
   const seenReplay = useRef(state.replayCount);
-  const [time, setTime] = useState(sentence?.start ?? 0);
   const start = sentence?.start;
   const end = sentence?.end;
 
@@ -28,8 +29,8 @@ export function useAudioController(
     // 切句先停播并定位到句首，避免上一句的时间继续泄漏到新句。
     audio.pause();
     audio.currentTime = start;
-    setTime(start);
-  }, [audioRef, sentence, start]);
+    playhead.set(start);
+  }, [audioRef, sentence, start, playhead]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -65,7 +66,7 @@ export function useAudioController(
       return true;
     };
     const tick = () => {
-      setTime(audio.currentTime);
+      playhead.set(audio.currentTime);
       // RAF 比 timeupdate 更密集，是 sentence.end 播放边界的主检查。
       if (reachedEnd()) {
         frame.current = null;
@@ -76,7 +77,7 @@ export function useAudioController(
     // 标签页在后台时浏览器会暂停 RAF，音频却继续播放；timeupdate 仍会低频触发，
     // 只作兜底防止一路播到后面的句子，前台的精确停点仍由 RAF 决定。
     const onTimeUpdate = () => {
-      setTime(audio.currentTime);
+      playhead.set(audio.currentTime);
       if (reachedEnd() && frame.current !== null) {
         cancelAnimationFrame(frame.current);
         frame.current = null;
@@ -91,13 +92,20 @@ export function useAudioController(
       frame.current = null;
     };
     // 倍速由上面独立的 effect 负责，这里不因倍速变化重新调用 play。
-  }, [audioRef, start, end, state.playing, state.replayCount, onCompleted, onPlaybackError]);
+  }, [
+    audioRef,
+    start,
+    end,
+    state.playing,
+    state.replayCount,
+    playhead,
+    onCompleted,
+    onPlaybackError
+  ]);
 
   useEffect(() => {
     const audio = audioRef.current;
     // 卸载时停止播放，离开练习台后不应继续发声。
     return () => audio?.pause();
   }, [audioRef]);
-
-  return { time };
 }
