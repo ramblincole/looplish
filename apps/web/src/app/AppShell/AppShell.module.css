@@ -1,0 +1,53 @@
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-topbar);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-block-size: var(--topbar-h);
+  padding: 12px var(--pad);
+  background: color-mix(in srgb, var(--ink) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+.brandMark {
+  inline-size: 9px;
+  block-size: 9px;
+  border-radius: 50%;
+  background: var(--lamp);
+  box-shadow:
+    0 0 0 3px var(--lamp-soft),
+    0 0 12px var(--lamp);
+}
+
+.brandName {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  color: var(--chalk);
+}
+
+.brandSlash {
+  color: var(--lamp);
+}
+
+.nav {
+  display: flex;
+  gap: 8px;
+}
+
+@media (width <= 560px) {
+  .topbar {
+    padding: 10px 14px;
+  }
+}
