@@ -36,7 +36,6 @@ textarea {
 :focus-visible {
   outline: 2px solid var(--lamp);
   outline-offset: 2px;
-  border-radius: var(--r-sm);
 }
 
 /* 视觉隐藏但仍可被读屏软件读到 */
