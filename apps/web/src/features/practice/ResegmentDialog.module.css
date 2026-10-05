@@ -1,0 +1,30 @@
+.hint {
+  margin: 0 0 16px;
+  color: var(--chalk-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.issues,
+.error {
+  margin: 12px 0 0;
+  color: var(--danger-soft);
+  font-size: 13px;
+}
+
+.issues {
+  padding-left: 18px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}

@@ -1,7 +1,6 @@
-// 全局样式必须首先加载，使组件 CSS Modules 能以相同特异性优先级胜出。
+// tokens.css 与 base.css 必须首先加载，使组件 CSS Modules 能以相同特异性优先级胜出。
 import "./styles/tokens.css";
 import "./styles/base.css";
-import "./styles.css";
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";

@@ -1,0 +1,12 @@
+.track {
+  block-size: 3px;
+  overflow: hidden;
+  background: var(--ink-sunk);
+  border-radius: 2px;
+}
+
+.fill {
+  block-size: 100%;
+  background: var(--lamp);
+  border-radius: 2px;
+}

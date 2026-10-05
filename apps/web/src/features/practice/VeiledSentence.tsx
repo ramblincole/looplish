@@ -1,5 +1,6 @@
 import type { JobResult } from "../../api/types";
 import { usePlayhead } from "./playerContext";
+import styles from "./VeiledSentence.module.css";
 
 type Sentence = JobResult["sentences"][number];
 
@@ -26,42 +27,36 @@ function tokenize(sentence: Sentence): Token[] {
     .map((core, index) => ({ lead: index > 0 ? " " : "", core, start: 0, end: 0, timed: false }));
 }
 
-export function VeiledTranscript({
-  sentence,
-  revealed
-}: {
-  sentence: Sentence;
-  revealed: boolean;
-}) {
+/**
+ * 签名元素：遮罩时每个词仍在页面上但文字透明，只剩与真实词宽一致的色块，播放到哪个词哪个词就点亮；
+ * 揭晓后点亮的是文字本身。遮罩时整段对读屏隐藏、不能选中，读屏只读到词数。
+ */
+export function VeiledSentence({ sentence, revealed }: { sentence: Sentence; revealed: boolean }) {
   // 只有这里订阅播放时间：词高亮每帧更新，不牵动练习台的其他部分。
   const currentTime = usePlayhead();
   const tokens = tokenize(sentence);
   return (
-    <div className="transcript" aria-live="polite">
+    <div
+      className={styles.shell}
+      data-sentence
+      data-veiled={revealed ? "false" : "true"}
+      aria-live="polite"
+    >
       {revealed ? null : (
-        <span className="visually-hidden">文本已隐藏，共 {tokens.length} 个词。</span>
+        <span className="visuallyHidden">文本已隐藏，共 {tokens.length} 个词。</span>
       )}
-      <p className={revealed ? "transcript-text" : "transcript-text transcript-text--veiled"}>
+      <p className={styles.sentence} aria-hidden={revealed ? undefined : "true"}>
         {tokens.map((token, index) => {
           // 高亮严格使用每个词自己的时间；句子的 start/end 只决定播放范围。
           const active = token.timed && token.start <= currentTime && currentTime < token.end;
-          if (!revealed) {
-            // 遮罩块宽度与词长相关，保留句子节奏，但不向读屏软件暴露任何字母。
-            return (
-              <span
-                key={index}
-                className="word word--veiled"
-                style={{ inlineSize: `${Math.max(1, token.core.length)}ch` }}
-                aria-hidden="true"
-              />
-            );
-          }
           return (
             <span key={index}>
               {token.lead}
               <span
-                className={active ? "word word--active" : "word"}
-                aria-current={active ? "true" : undefined}
+                className={styles.word}
+                data-word
+                data-active={active ? "true" : undefined}
+                aria-current={revealed && active ? "true" : undefined}
               >
                 {token.core}
               </span>

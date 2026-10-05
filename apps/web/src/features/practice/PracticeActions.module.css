@@ -1,0 +1,14 @@
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ink-line);
+}
+
+.exports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

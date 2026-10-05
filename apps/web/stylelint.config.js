@@ -1,8 +1,6 @@
 /** @type {import("stylelint").Config} */
 export default {
   extends: ["stylelint-config-standard", "stylelint-config-css-modules"],
-  // 旧的全局样式表在 PR 3 删除，迁移完成前不纳入检查。
-  ignoreFiles: ["src/styles.css"],
   rules: {
     // CSS Modules 在 TS 中以 styles.xxx 访问，类名统一 camelCase。
     "selector-class-pattern": [

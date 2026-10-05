@@ -1,35 +1,59 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import type { JobResult } from "../api/types";
+import { buttonClass } from "../components/Button/buttonClass";
+import { ProgressBar } from "../components/ProgressBar/ProgressBar";
 import { useToast } from "../components/Toast/toastContext";
 import { errorMessage } from "../features/intake/processing";
-import { STAGE_LABELS } from "../features/jobs/jobLabels";
+import { statusText } from "../features/jobs/jobLabels";
 import { isActive, useJob, useJobResult } from "../features/jobs/useJobs";
-import { ExportMenu } from "../features/practice/ExportMenu";
+import { PlaybackSettings } from "../features/practice/PlaybackSettings";
 import { PlayerProvider } from "../features/practice/PlayerProvider";
-import { PracticeControls } from "../features/practice/PracticeControls";
-import { ResegmentDialog } from "../features/practice/ResegmentDialog";
+import { PracticeActions } from "../features/practice/PracticeActions";
+import { Readout } from "../features/practice/Readout";
+import { SentenceProgress } from "../features/practice/SentenceProgress";
 import { SentenceReel } from "../features/practice/SentenceReel";
-import { VeiledTranscript } from "../features/practice/VeiledTranscript";
+import { Transport } from "../features/practice/Transport";
+import { VeiledSentence } from "../features/practice/VeiledSentence";
 import { usePlayer, usePlayerActions } from "../features/practice/playerContext";
 import { formatRate, formatRepeat } from "../features/practice/playerLabels";
 import { clampRate, nextRepeat, stepRate } from "../features/practice/playerReducer";
 import { useAudioController } from "../features/practice/useAudioController";
 import { useHotkeys } from "../features/practice/useHotkeys";
+import styles from "./PracticePage.module.css";
 
 function BackLink() {
   return (
-    <Link to="/" className="back-link">
-      ← 返回素材库
+    <Link to="/" className={buttonClass("ghost")}>
+      ← 素材库
     </Link>
+  );
+}
+
+/** 排队、处理中、失败、空结果、任务不存在：都用同一种居中卡片。 */
+function StateCard({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <section className={styles.stateCard}>
+      <BackLink />
+      {title ? <h1 className={styles.stateTitle}>{title}</h1> : null}
+      {children}
+    </section>
   );
 }
 
 export function PracticePage() {
   const { jobId = "" } = useParams();
   return (
-    <main className="practice">
-      {jobId ? <PracticeLoader jobId={jobId} /> : <p role="alert">缺少任务编号。</p>}
+    <main className={styles.page}>
+      {jobId ? (
+        <PracticeLoader jobId={jobId} />
+      ) : (
+        <StateCard title="无法打开练习">
+          <p role="alert" className={styles.failure}>
+            缺少任务编号。
+          </p>
+        </StateCard>
+      )}
     </main>
   );
 }
@@ -44,81 +68,78 @@ function PracticeLoader({ jobId }: { jobId: string }) {
   // 也会让查询进入 error 状态，此时继续用上次的数据，不能卸载正在练习的播放器。
   const current = job.data;
   if (current === undefined) {
-    if (!job.isError) return <p role="status">正在加载任务…</p>;
+    if (!job.isError) {
+      return (
+        <p role="status" className={styles.note}>
+          正在加载任务…
+        </p>
+      );
+    }
     return (
-      <>
-        <BackLink />
-        <p role="alert">{errorMessage(job.error)}</p>
-      </>
+      <StateCard title="无法打开练习">
+        <p role="alert" className={styles.failure}>
+          {errorMessage(job.error)}
+        </p>
+      </StateCard>
     );
   }
   if (isActive(current.status)) {
-    const percent = Math.round(Math.min(1, Math.max(0, current.progress)) * 100);
     return (
-      <>
-        <BackLink />
-        <h1>{current.title}</h1>
-        <p role="status">
-          {current.status === "queued" ? "排队中" : "处理中"}
-          {current.stage ? `（${STAGE_LABELS[current.stage]}）` : null}：{current.message}
+      <StateCard title={current.title}>
+        <ProgressBar value={current.progress} label="处理进度" />
+        <p role="status" className={styles.stageLine}>
+          {`${statusText(current)} · ${current.message}`}
         </p>
-        <progress
-          max={1}
-          value={current.progress}
-          aria-label="处理进度"
-          aria-valuetext={`${percent}%`}
-        />
-      </>
+      </StateCard>
     );
   }
   if (current.status === "failed") {
     return (
-      <>
-        <BackLink />
-        <h1>{current.title}</h1>
-        <p role="alert">处理失败：{current.error?.detail ?? current.message}</p>
-      </>
+      <StateCard title={current.title}>
+        <p role="alert" className={styles.failure}>
+          处理失败：{current.error?.detail ?? current.message}
+        </p>
+      </StateCard>
     );
   }
 
   const data = result.data;
   if (data === undefined) {
-    if (!result.isError) return <p role="status">正在加载句子…</p>;
+    if (!result.isError) {
+      return (
+        <p role="status" className={styles.note}>
+          正在加载句子…
+        </p>
+      );
+    }
     return (
-      <>
-        <BackLink />
-        <p role="alert">{errorMessage(result.error)}</p>
-      </>
+      <StateCard title="无法打开练习">
+        <p role="alert" className={styles.failure}>
+          {errorMessage(result.error)}
+        </p>
+      </StateCard>
     );
   }
   if (data.sentences.length === 0) {
     // 空结果不能进入播放器，否则会索引不存在的 sentences[0]。
     return (
-      <>
-        <BackLink />
-        <h1>{data.title}</h1>
+      <StateCard title={data.title}>
         <p role="status">未找到可练习句段。</p>
-      </>
+      </StateCard>
     );
   }
 
-  // 提示与播放器的位置固定，提示出现或消失都不会让播放器重新挂载、丢失练习进度。
+  // 刷新失败的提示放进工作区内部，PlayerProvider 始终是唯一的子路径，
+  // 提示出现或消失都不会让播放器重新挂载、丢失练习进度。
   return (
-    <>
-      {job.isError || result.isError ? (
-        <p role="status" className="stale-notice">
-          暂时无法从服务刷新任务状态，页面显示的是上次加载的内容。
-        </p>
-      ) : null}
-      <PlayerProvider result={data}>
-        <PracticeWorkspace result={data} />
-      </PlayerProvider>
-    </>
+    <PlayerProvider result={data}>
+      <PracticeWorkspace result={data} stale={job.isError || result.isError} />
+    </PlayerProvider>
   );
 }
 
-function PracticeWorkspace({ result }: { result: JobResult }) {
-  const { state, sentenceCount, send, completed, playhead } = usePlayer();
+function PracticeWorkspace({ result, stale }: { result: JobResult; stale: boolean }) {
+  const { state, send, completed, playhead } = usePlayer();
   const actions = usePlayerActions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -162,46 +183,46 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
   });
 
   return (
-    <>
-      <header className="practice-header">
-        <BackLink />
-        <h1>{result.title}</h1>
-        {result.uploader ? <p className="uploader">{result.uploader}</p> : null}
-        <div className="toolbar">
-          <ResegmentDialog
-            jobId={result.jobId}
-            open={resegmentOpen}
-            onOpenChange={setResegmentOpen}
-          />
-          <ExportMenu jobId={result.jobId} />
+    <div className={styles.workspace}>
+      <section className={styles.stage} aria-labelledby="current-sentence-title">
+        <div className={styles.meta}>
+          <BackLink />
+          <h1 className={styles.title} title={result.title}>
+            {result.title}
+          </h1>
         </div>
-      </header>
-      <div className="workspace">
-        <SentenceReel sentences={result.sentences} />
-        <section className="stage" aria-labelledby="current-sentence-title">
-          <h2 id="current-sentence-title">
-            第 {state.sentenceIndex + 1} / {sentenceCount} 句
-          </h2>
-          {sentence ? <VeiledTranscript sentence={sentence} revealed={state.revealed} /> : null}
-          <button
-            type="button"
-            className="secondary"
-            onClick={actions.toggleReveal}
-            aria-pressed={state.revealed}
-            aria-keyshortcuts="Enter"
-          >
-            {state.revealed ? "隐藏文本" : "显示文本"}
-          </button>
-          {playbackError ? <p role="alert">{playbackError}</p> : null}
-          <PracticeControls />
-          <audio
-            ref={audioRef}
-            src={result.audioUrl}
-            preload="auto"
-            onError={() => setPlaybackError("音频加载失败，请刷新页面或稍后重试。")}
-          />
-        </section>
-      </div>
-    </>
+        {sentence ? (
+          <>
+            <Readout sentence={sentence} />
+            <VeiledSentence sentence={sentence} revealed={state.revealed} />
+            <SentenceProgress start={sentence.start} end={sentence.end} />
+          </>
+        ) : null}
+        {playbackError ? (
+          <p role="alert" className={styles.failure}>
+            {playbackError}
+          </p>
+        ) : null}
+        {stale ? (
+          <p role="status" className={styles.notice}>
+            暂时无法从服务刷新任务状态，页面显示的是上次加载的内容。
+          </p>
+        ) : null}
+        <Transport />
+        <PlaybackSettings />
+        <PracticeActions
+          jobId={result.jobId}
+          resegmentOpen={resegmentOpen}
+          onResegmentOpenChange={setResegmentOpen}
+        />
+        <audio
+          ref={audioRef}
+          src={result.audioUrl}
+          preload="auto"
+          onError={() => setPlaybackError("音频加载失败，请刷新页面或稍后重试。")}
+        />
+      </section>
+      <SentenceReel sentences={result.sentences} />
+    </div>
   );
 }

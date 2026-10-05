@@ -22,12 +22,12 @@ vi.mock("../features/practice/SentenceReel", async (importOriginal) => {
   };
 });
 
-vi.mock("../features/practice/PracticeControls", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../features/practice/PracticeControls")>();
+vi.mock("../features/practice/PlaybackSettings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../features/practice/PlaybackSettings")>();
   return {
-    PracticeControls: () => {
+    PlaybackSettings: () => {
       renders.controls += 1;
-      return actual.PracticeControls();
+      return actual.PlaybackSettings();
     }
   };
 });
@@ -292,11 +292,11 @@ async function ready(total = 3) {
 
 const heading = () => document.getElementById("current-sentence-title")?.textContent;
 const playButton = () => screen.getByRole("button", { name: /^(播放|暂停)$/ });
-const transcript = () => document.querySelector(".transcript") as HTMLElement;
-const activeWord = () => transcript().querySelector("[aria-current='true']")?.textContent ?? null;
+const transcript = () => document.querySelector("[data-sentence]") as HTMLElement;
+const activeWord = () => transcript().querySelector("[data-active='true']")?.textContent ?? null;
 const key = (value: string, target: Element = document.body, init: KeyboardEventInit = {}) =>
   fireEvent.keyDown(target, { key: value, ...init });
-const playStatus = () => document.querySelector(".play-status")?.textContent;
+const playStatus = () => document.querySelector("[data-readout='loop']")?.textContent;
 
 describe("loading states", () => {
   it("polls a queued job without requesting its result, then opens the player", async () => {
@@ -309,7 +309,7 @@ describe("loading states", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     renderPractice();
 
-    expect(await screen.findByText(/处理中（转写）：正在识别/)).toBeInTheDocument();
+    expect(await screen.findByText("处理中·转写 · 正在识别")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "处理进度" })).toHaveAttribute(
       "aria-valuetext",
       "40%"
@@ -356,7 +356,8 @@ describe("loading states", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("没有找到指定任务。");
     expect(state.requests.job).toBe(1);
-    expect(screen.getByRole("link", { name: "← 返回素材库" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "← 素材库" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("heading", { level: 1, name: "无法打开练习" })).toBeInTheDocument();
   });
   it("keeps the player and its progress when a background refresh of the job fails", async () => {
     const { client } = renderPractice();
@@ -371,6 +372,15 @@ describe("loading states", () => {
     expect(heading()).toBe("第 2 / 3 句");
     expect(screen.getByLabelText("语速")).toHaveValue("0.8");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("names the job title and offers the way back while practising", async () => {
+    renderPractice();
+    await ready();
+
+    expect(screen.getByRole("heading", { level: 1, name: "Everyday Talk" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "← 素材库" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("region", { name: "第 1 / 3 句" })).toContainElement(playButton());
   });
 });
 
@@ -391,7 +401,7 @@ describe("audio boundaries", () => {
     expect(playButton()).toHaveTextContent("播放");
     // 到达句末后 RAF 链结束，不再有排队的帧。
     expect(frames.size).toBe(0);
-    expect(screen.getByText("共 3 句，已练 1 句")).toBeInTheDocument();
+    expect(screen.getByText("已练 1 / 3")).toBeInTheDocument();
   });
 
   it("resumes a paused sentence in place but replays from the start with R", async () => {
@@ -442,7 +452,7 @@ describe("audio boundaries", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("浏览器拒绝了播放");
     expect(playButton()).toHaveTextContent("播放");
     // 播放被拒不是句子完成，不能计为已练。
-    expect(screen.getByText("共 3 句，已练 0 句")).toBeInTheDocument();
+    expect(screen.getByText("已练 0 / 3")).toBeInTheDocument();
   });
 
   it("ignores the AbortError caused by pausing before play resolves", async () => {
@@ -456,22 +466,44 @@ describe("audio boundaries", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(playButton()).toHaveTextContent("暂停");
   });
+
+  it("shows where the playhead is within the sentence and how often it was heard", async () => {
+    renderPractice();
+    await ready();
+    const readout = (name: string) => document.querySelector(`[data-readout='${name}']`);
+    expect(readout("duration")).toHaveTextContent("1.7s");
+    expect(readout("listens")).toHaveTextContent("听了 0 次");
+
+    fireEvent.click(playButton());
+    playTo(1.15);
+    expect(readout("time")).toHaveTextContent("00:00.8");
+    const fill = document.querySelector("[data-sentence-progress] > *") as HTMLElement;
+    expect(fill.style.inlineSize).toBe("50%");
+
+    playTo(2.0);
+    expect(readout("listens")).toHaveTextContent("听了 1 次");
+  });
 });
 
 describe("veiled transcript", () => {
-  it("hides the text by default with word-sized blocks and reveals it with Enter", async () => {
+  it("veils the words in place and reveals them with Enter", async () => {
     renderPractice();
     await ready();
 
+    expect(transcript()).toHaveAttribute("data-veiled", "true");
     expect(within(transcript()).getByText("文本已隐藏，共 2 个词。")).toBeInTheDocument();
-    const blocks = transcript().querySelectorAll<HTMLElement>(".word--veiled");
-    expect([...blocks].map((block) => block.style.inlineSize)).toEqual(["5ch", "6ch"]);
-    expect(transcript()).not.toHaveTextContent("Hello");
+    // 词留在页面上撑出真实宽度，但整段对读屏隐藏。
+    expect(within(transcript()).getByText("Hello").closest("p")).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
 
     key("Enter");
 
+    expect(transcript()).toHaveAttribute("data-veiled", "false");
+    expect(within(transcript()).getByText("Hello").closest("p")).not.toHaveAttribute("aria-hidden");
     expect(transcript()).toHaveTextContent("Hello there.");
-    expect(screen.getByRole("button", { name: "隐藏文本" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "遮住原文" })).toHaveAttribute(
       "aria-pressed",
       "true"
     );
@@ -502,9 +534,10 @@ describe("veiled transcript", () => {
     expect(heading()).toBe("第 2 / 3 句");
     expect(within(transcript()).getByText("文本已隐藏，共 3 个词。")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText("切换句子时重新隐藏文本"));
+    fireEvent.click(screen.getByLabelText("换句自动遮住"));
     key("Enter");
     key("ArrowRight");
+    expect(transcript()).toHaveAttribute("data-veiled", "false");
     expect(transcript()).toHaveTextContent("Bye.");
   });
 
@@ -518,6 +551,7 @@ describe("veiled transcript", () => {
     fireEvent.click(playButton());
     playTo(0.6);
 
+    expect(transcript()).toHaveAttribute("data-veiled", "false");
     expect(transcript()).toHaveTextContent("Hello there.");
     expect(activeWord()).toBeNull();
   });
@@ -545,12 +579,12 @@ describe("loops, gaps and auto advance", () => {
   it("replays after a fixed gap until repeat is reached, then stops without a timer", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "2" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
     fireEvent.click(playButton());
     playTo(2.0);
-    expect(playStatus()).toBe("第 2 / 2 遍 · 跟读留白中…");
+    expect(playStatus()).toBe("循环 2/2 · 跟读中");
 
     act(() => vi.advanceTimersByTime(999));
     expect(media.plays).toBe(1);
@@ -559,7 +593,7 @@ describe("loops, gaps and auto advance", () => {
     expect(media.seeks.at(-1)).toBe(0.3);
 
     playTo(2.0);
-    expect(playStatus()).toBe("第 1 / 2 遍");
+    expect(playStatus()).toBe("循环 1/2");
     act(() => vi.advanceTimersByTime(10_000));
     expect(media.plays).toBe(2);
   });
@@ -567,8 +601,8 @@ describe("loops, gaps and auto advance", () => {
   it("keeps looping with infinite repeat until the user pauses", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "infinite" } });
-    fireEvent.change(screen.getByLabelText("跟读留白"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "infinite" } });
+    fireEvent.change(screen.getByLabelText("跟读间隔"), { target: { value: "0" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
     fireEvent.click(playButton());
@@ -577,7 +611,7 @@ describe("loops, gaps and auto advance", () => {
       act(() => vi.advanceTimersByTime(0));
       expect(media.plays).toBe(round);
     }
-    expect(playStatus()).toBe("第 4 遍（无限循环）");
+    expect(playStatus()).toBe("循环 4/∞");
 
     key(" ");
     expect(media.paused).toBe(true);
@@ -588,7 +622,7 @@ describe("loops, gaps and auto advance", () => {
   it("waits as long as the finished sentence before auto advancing", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("跟读留白"), { target: { value: "sentence" } });
+    fireEvent.change(screen.getByLabelText("跟读间隔"), { target: { value: "sentence" } });
     fireEvent.click(screen.getByLabelText("自动下一句"));
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
@@ -624,7 +658,7 @@ describe("loops, gaps and auto advance", () => {
   it("cancels the pending gap when the user selects another sentence", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "2" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
     fireEvent.click(playButton());
@@ -633,7 +667,7 @@ describe("loops, gaps and auto advance", () => {
     act(() => vi.advanceTimersByTime(5000));
 
     expect(media.plays).toBe(1);
-    expect(playStatus()).toBe("第 1 / 2 遍");
+    expect(playStatus()).toBe("循环 1/2");
     expect(screen.getByRole("button", { name: /^第 2 句/ })).toHaveAttribute(
       "aria-current",
       "true"
@@ -643,7 +677,7 @@ describe("loops, gaps and auto advance", () => {
   it("stops frames, timers and sound on unmount", async () => {
     const { unmount } = renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "2" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     fireEvent.click(playButton());
     playTo(2.0);
@@ -661,8 +695,8 @@ describe("loops, gaps and auto advance", () => {
   it("stretches a sentence-length gap by the playback rate", async () => {
     renderPractice();
     await ready();
-    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "2" } });
-    fireEvent.change(screen.getByLabelText("跟读留白"), { target: { value: "sentence" } });
+    fireEvent.change(screen.getByLabelText("循环"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("跟读间隔"), { target: { value: "sentence" } });
     fireEvent.change(screen.getByLabelText("语速"), { target: { value: "0.8" } });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
@@ -698,7 +732,7 @@ describe("hotkeys", () => {
 
     key("l");
     key("L");
-    expect(screen.getByLabelText("循环次数")).toHaveValue("3");
+    expect(screen.getByLabelText("循环")).toHaveValue("3");
 
     key("]");
     key("]");
@@ -758,7 +792,7 @@ describe("hotkeys", () => {
     const user = userEvent.setup();
     renderPractice();
     await ready();
-    await user.click(screen.getByRole("button", { name: "重新切句" }));
+    await user.click(screen.getByRole("button", { name: "重新切分" }));
 
     key("ArrowRight");
     key(" ");
@@ -789,24 +823,85 @@ describe("hotkeys", () => {
 
     expect(heading()).toBe("第 1 / 3 句");
   });
+
+  it("labels icon-only transport buttons and shows their hotkeys on hover", async () => {
+    renderPractice();
+    await ready();
+
+    for (const [name, hint] of [
+      ["上一句", "←"],
+      ["播放", "空格"],
+      ["重听", "R"],
+      ["下一句", "→"]
+    ]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("title", `${name}（${hint}）`);
+    }
+    expect(screen.getByRole("button", { name: "显示原文" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+  });
 });
 
 describe("sentence reel", () => {
-  it("searches sentences and marks the current one without relying on color", async () => {
+  it("scrolls only the list, never the page, to keep the current row visible", async () => {
+    // jsdom 不做布局：清单可见区设为 100–200px，当前行放在可见区下方 250–280px。
+    const rect = (top: number, bottom: number) =>
+      ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top }) as DOMRect;
+    const rects = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.tagName === "OL") return rect(100, 200);
+        if (this.getAttribute("aria-current") === "true") return rect(250, 280);
+        return rect(0, 0);
+      });
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView
+    });
+    try {
+      renderPractice();
+      await ready();
+      const list = screen.getByRole("list");
+      list.scrollTop = 0;
+
+      key("ArrowRight");
+
+      expect(list.scrollTop).toBe(80);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      rects.mockRestore();
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  it("blurs the list while the current sentence is veiled and lets search reveal matches", async () => {
     const user = userEvent.setup();
     renderPractice();
     await ready();
-    // 盲听模式下列表只显示时间，不剧透原文。
-    expect(screen.queryByText("How are you?")).not.toBeInTheDocument();
+    // 盲听时列表原文模糊并对读屏隐藏，行的读屏名称只剩序号与时间。
+    expect(screen.getByText("How are you?")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("button", { name: /^第 2 句\s*00:03$/ })).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("搜索句子"), "how");
 
     expect(screen.getByText("找到 1 句")).toBeInTheDocument();
     const item = screen.getByRole("button", { name: /^第 2 句/ });
-    expect(item).toHaveTextContent("How are you?");
+    expect(within(item).getByText("How are you?")).not.toHaveAttribute("aria-hidden");
     await user.click(item);
     expect(item).toHaveAttribute("aria-current", "true");
     expect(item).toHaveTextContent("已练");
+  });
+
+  it("shows every sentence once the current one is revealed", async () => {
+    renderPractice();
+    await ready();
+
+    key("Enter");
+
+    expect(screen.getByText("How are you?")).not.toHaveAttribute("aria-hidden");
+    expect(screen.getByText("已练 0 / 3")).toBeInTheDocument();
   });
 });
 
@@ -815,12 +910,16 @@ describe("resegment and export", () => {
     const user = userEvent.setup();
     renderPractice();
     await ready();
+    // 先听完第 1 句，让「听了 N 次」在重置前为 1。
+    fireEvent.click(playButton());
+    playTo(2.0);
+    expect(document.querySelector("[data-readout='listens']")).toHaveTextContent("听了 1 次");
     key("ArrowRight");
     const jobRequests = state.requests.job;
 
-    const trigger = screen.getByRole("button", { name: "重新切句" });
+    const trigger = screen.getByRole("button", { name: "重新切分" });
     await user.click(trigger);
-    const dialog = screen.getByRole("dialog", { name: "重新切句" });
+    const dialog = screen.getByRole("dialog", { name: "重新切分" });
     expect(within(dialog).getByLabelText("最短句长（秒）")).toHaveFocus();
     const apply = within(dialog).getByRole("button", { name: "应用" });
     expect(apply).toBeDisabled();
@@ -834,8 +933,10 @@ describe("resegment and export", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(state.requests.resegment).toEqual([{ maxDuration: 2 }]);
+    expect(await screen.findByText("重新切分完成，共 4 句")).toBeInTheDocument();
     expect(heading()).toBe("第 1 / 4 句");
-    expect(screen.getByText("共 4 句，已练 0 句")).toBeInTheDocument();
+    expect(screen.getByText("已练 0 / 4")).toBeInTheDocument();
+    expect(document.querySelector("[data-readout='listens']")).toHaveTextContent("听了 0 次");
     // 新结果直接写入缓存，不再请求 result；Job 的句子数交给服务端刷新。
     expect(state.requests.result).toBe(1);
     await waitFor(() => expect(state.requests.job).toBeGreaterThan(jobRequests));
@@ -852,7 +953,7 @@ describe("resegment and export", () => {
     renderPractice();
     await ready();
 
-    await user.click(screen.getByRole("button", { name: "重新切句" }));
+    await user.click(screen.getByRole("button", { name: "重新切分" }));
     await user.type(screen.getByLabelText("强制断句停顿（秒）"), "1");
     await user.click(screen.getByRole("button", { name: "应用" }));
 
@@ -866,7 +967,7 @@ describe("resegment and export", () => {
     const user = userEvent.setup();
     renderPractice();
     await ready();
-    const trigger = screen.getByRole("button", { name: "重新切句" });
+    const trigger = screen.getByRole("button", { name: "重新切分" });
     await user.click(trigger);
 
     key("ArrowRight");
@@ -883,15 +984,15 @@ describe("resegment and export", () => {
     await ready();
     const exports = within(screen.getByRole("navigation", { name: "导出" }));
 
-    expect(exports.getByRole("link", { name: "SRT 字幕" })).toHaveAttribute(
+    expect(exports.getByRole("link", { name: "下载 SRT" })).toHaveAttribute(
       "href",
       `/api/v1/jobs/${JOB_ID}/subtitles.srt`
     );
-    expect(exports.getByRole("link", { name: "VTT 字幕" })).toHaveAttribute(
+    expect(exports.getByRole("link", { name: "下载 VTT" })).toHaveAttribute(
       "href",
       `/api/v1/jobs/${JOB_ID}/subtitles.vtt`
     );
-    expect(exports.getByRole("link", { name: "纯文本" })).toHaveAttribute(
+    expect(exports.getByRole("link", { name: "下载文本" })).toHaveAttribute(
       "href",
       `/api/v1/jobs/${JOB_ID}/subtitles.txt`
     );
