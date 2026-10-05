@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ResegmentRequest } from "../../api/types";
+import { Modal } from "../../components/Modal/Modal";
 import { errorMessage, SEGMENT_LIMITS, type SegmentField } from "../intake/processing";
 import { useResegment } from "../jobs/useJobs";
 import { usePlayer } from "./playerContext";
@@ -49,23 +50,13 @@ export function ResegmentDialog({
   const resegment = useResegment(jobId);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const wasOpen = useRef(open);
-  const titleId = useId();
   const { issues, body } = toOverrides(draft);
   const filled = Object.keys(body).length > 0;
   const { reset } = resegment;
 
   useEffect(() => {
-    if (open) {
-      // 打开时把焦点移入对话框，并清掉上一次提交留下的错误。
-      reset();
-      dialogRef.current?.querySelector<HTMLElement>("input")?.focus();
-    } else if (wasOpen.current) {
-      // 关闭（Escape、取消或提交成功）后焦点回到触发按钮，键盘用户不会迷失位置。
-      triggerRef.current?.focus();
-    }
-    wasOpen.current = open;
+    // 每次打开都清掉上一次提交留下的错误；焦点移入与返回由 Modal 负责。
+    if (open) reset();
   }, [open, reset]);
 
   function submit(event: FormEvent) {
@@ -81,24 +72,6 @@ export function ResegmentDialog({
     });
   }
 
-  function trapFocus(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "Tab" || !dialogRef.current) return;
-    const focusable = Array.from(
-      dialogRef.current.querySelectorAll<HTMLElement>("input, button:not(:disabled)")
-    );
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    // 模态对话框内循环 Tab 焦点，避免键盘焦点落到被遮住的页面上。
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
   return (
     <>
       <button
@@ -110,66 +83,56 @@ export function ResegmentDialog({
       >
         重新切句
       </button>
-      {open ? (
-        <div className="dialog-backdrop">
-          <div
-            ref={dialogRef}
-            className="dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            onKeyDown={trapFocus}
-          >
-            <h2 id={titleId}>重新切句</h2>
-            <p className="dialog-hint">
-              只填写需要调整的参数，留空的沿用该素材上次的设置。重新切句只使用已有的词级时间，不会重新识别。
-            </p>
-            <form onSubmit={submit} noValidate>
-              <div className="dialog-fields">
-                {FIELDS.map((field) => {
-                  const limit = SEGMENT_LIMITS[field];
-                  return (
-                    <label key={field}>
-                      {limit.label}（秒）
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        step={0.05}
-                        min={limit.min}
-                        max={limit.max}
-                        placeholder={`${limit.min}–${limit.max}`}
-                        value={draft[field]}
-                        onChange={(event) =>
-                          setDraft((current) => ({ ...current, [field]: event.target.value }))
-                        }
-                      />
-                    </label>
-                  );
-                })}
-              </div>
-              {issues.length > 0 ? (
-                <ul className="issues" role="alert">
-                  {issues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              ) : null}
-              {resegment.isError ? <p role="alert">{errorMessage(resegment.error)}</p> : null}
-              <div className="dialog-actions">
-                <button type="button" className="secondary" onClick={() => onOpenChange(false)}>
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={!filled || issues.length > 0 || resegment.isPending}
-                >
-                  {resegment.isPending ? "正在切句…" : "应用"}
-                </button>
-              </div>
-            </form>
+      <Modal
+        open={open}
+        title="重新切句"
+        returnFocusTo={triggerRef}
+        onClose={() => onOpenChange(false)}
+      >
+        <p className="dialog-hint">
+          只填写需要调整的参数，留空的沿用该素材上次的设置。重新切句只使用已有的词级时间，不会重新识别。
+        </p>
+        <form onSubmit={submit} noValidate>
+          <div className="dialog-fields">
+            {FIELDS.map((field) => {
+              const limit = SEGMENT_LIMITS[field];
+              return (
+                <label key={field}>
+                  {limit.label}（秒）
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step={0.05}
+                    min={limit.min}
+                    max={limit.max}
+                    placeholder={`${limit.min}–${limit.max}`}
+                    value={draft[field]}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, [field]: event.target.value }))
+                    }
+                  />
+                </label>
+              );
+            })}
           </div>
-        </div>
-      ) : null}
+          {issues.length > 0 ? (
+            <ul className="issues" role="alert">
+              {issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          ) : null}
+          {resegment.isError ? <p role="alert">{errorMessage(resegment.error)}</p> : null}
+          <div className="dialog-actions">
+            <button type="button" className="secondary" onClick={() => onOpenChange(false)}>
+              取消
+            </button>
+            <button type="submit" disabled={!filled || issues.length > 0 || resegment.isPending}>
+              {resegment.isPending ? "正在切句…" : "应用"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </>
   );
 }

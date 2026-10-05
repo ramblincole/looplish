@@ -652,7 +652,7 @@ describe("hotkeys", () => {
     expect(screen.getByLabelText("自动下一句")).toBeChecked();
   });
 
-  it("ignores keys while typing in inputs and leaves modifier shortcuts to the browser", async () => {
+  it("ignores keys while typing in text inputs and leaves modifier shortcuts to the browser", async () => {
     renderPractice();
     await ready();
     const search = screen.getByLabelText("搜索句子");
@@ -660,14 +660,31 @@ describe("hotkeys", () => {
     key(" ", search);
     key("ArrowRight", search);
     key("a", search);
-    fireEvent.keyDown(screen.getByLabelText("语速"), { key: "]" });
     key("r", document.body, { ctrlKey: true });
 
     expect(playButton()).toHaveTextContent("播放");
     expect(heading()).toBe("第 1 / 3 句");
     expect(screen.getByLabelText("自动下一句")).not.toBeChecked();
-    expect(screen.getByLabelText("语速")).toHaveValue("1");
     expect(media.plays).toBe(0);
+    // 搜索框里的 Escape 交给浏览器清空，快捷键不拦截。
+    expect(fireEvent.keyDown(search, { key: "Escape" })).toBe(true);
+  });
+
+  it("keeps player keys working on checkboxes and selects except the keys they own", async () => {
+    renderPractice();
+    await ready();
+    const autoAdvance = screen.getByLabelText("自动下一句");
+    const rate = screen.getByLabelText("语速");
+
+    key(" ", autoAdvance);
+    expect(playButton()).toHaveTextContent("播放");
+    key("ArrowRight", autoAdvance);
+    expect(heading()).toBe("第 2 / 3 句");
+
+    key("ArrowLeft", rate);
+    expect(heading()).toBe("第 2 / 3 句");
+    key("]", rate);
+    expect(rate).toHaveValue("1.05");
   });
 
   it("leaves Space on a focused button to the button itself", async () => {
@@ -677,6 +694,42 @@ describe("hotkeys", () => {
     key(" ", screen.getByRole("button", { name: "下一句" }));
 
     expect(playButton()).toHaveTextContent("播放");
+  });
+
+  it("pauses every player key while a dialog is open", async () => {
+    const user = userEvent.setup();
+    renderPractice();
+    await ready();
+    await user.click(screen.getByRole("button", { name: "重新切句" }));
+
+    key("ArrowRight");
+    key(" ");
+
+    expect(heading()).toBe("第 1 / 3 句");
+    expect(media.plays).toBe(0);
+  });
+
+  it("confirms setting changes made by hotkeys with a toast", async () => {
+    renderPractice();
+    await ready();
+
+    key("l");
+    expect(await screen.findByText("循环：每句 2 遍")).toBeInTheDocument();
+    key("[");
+    expect(await screen.findByText("语速 0.95×")).toBeInTheDocument();
+    key("a");
+    expect(await screen.findByText("自动下一句：开")).toBeInTheDocument();
+  });
+
+  it("pauses player keys while the hotkey panel is open", async () => {
+    const user = userEvent.setup();
+    renderPractice();
+    await ready();
+    await user.click(screen.getByRole("button", { name: "快捷键" }));
+
+    key("ArrowRight");
+
+    expect(heading()).toBe("第 1 / 3 句");
   });
 });
 

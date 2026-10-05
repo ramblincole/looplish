@@ -289,8 +289,8 @@ ResegmentDialog 改用 Modal；5 个参数保持数字输入框（留空 = 沿�
 
 | PR | 分支 | 内容 |
 |---|---|---|
-| 1 基础设施 | `feat/console-ui-foundation` | 本设计文档；tokens/base、CSS Modules 类型、stylelint；Button、Field、Modal、ConfirmDialog、Toast、ProgressBar；AppShell 与快捷键面板；快捷键表与焦点规则；播放进度订阅；reducer 的 `listenCounts` 与留白换算。两个页面暂用旧样式，功能不变 |
+| 1 基础设施 | `feat/console-ui-foundation` | 本设计文档；tokens/base、CSS Modules 类型、stylelint；Button、Field、Modal、ConfirmDialog、Toast、ProgressBar；AppShell 与快捷键面板；快捷键表与焦点规则；播放进度订阅；reducer 的 `listenCounts` 与留白换算。两个页面暂用旧样式，功能不变；ResegmentDialog 改用 Modal（外观在 PR 3 调整） |
 | 2 素材库 | `feat/console-ui-library` | IntakeCard、SettingsDrawer、JobList/JobCard、ProgressOverlay、后台完成提示 |
-| 3 练习台 | `feat/console-ui-practice` | 两栏布局、Readout、VeiledSentence、SentenceProgress、Transport、PlaybackSettings、PracticeActions、SentenceReel、ResegmentDialog 接入 Modal；删除 `src/styles.css` |
+| 3 练习台 | `feat/console-ui-practice` | 两栏布局、Readout、VeiledSentence、SentenceProgress、Transport、PlaybackSettings、PracticeActions、SentenceReel、ResegmentDialog 外观；删除 `src/styles.css` |
 
 每个 PR 的 diff 控制在 AI 评审可完整读取的范围内（约 100KB）。

@@ -1,4 +1,5 @@
 import { usePlayer, usePlayerActions } from "./playerContext";
+import { formatRate, formatRepeat } from "./playerLabels";
 import {
   MAX_RATE,
   MIN_RATE,
@@ -13,10 +14,6 @@ const RATES = Array.from(
   (_, index) => Math.round((MIN_RATE + index * RATE_STEP) * 100) / 100
 );
 const FIXED_GAPS = [0, 1, 2, 3, 5];
-
-function repeatLabel(repeat: Repeat): string {
-  return repeat === "infinite" ? "无限循环" : `${repeat} 遍`;
-}
 
 function gapValue(gap: GapMode): string {
   return gap.kind === "sentence" ? "sentence" : String(gap.seconds);
@@ -87,7 +84,7 @@ export function PracticeControls() {
           >
             {REPEAT_OPTIONS.map((option) => (
               <option key={option} value={String(option)}>
-                {repeatLabel(option)}
+                {formatRepeat(option)}
               </option>
             ))}
           </select>
@@ -101,7 +98,7 @@ export function PracticeControls() {
           >
             {RATES.map((option) => (
               <option key={option} value={String(option)}>
-                {option.toFixed(2)}×
+                {formatRate(option)}
               </option>
             ))}
           </select>

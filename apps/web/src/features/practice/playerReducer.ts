@@ -61,6 +61,10 @@ export function stepRate(rate: number, direction: 1 | -1): number {
   return Math.round((rate + direction * RATE_STEP) * 100) / 100;
 }
 
+export function clampRate(rate: number): number {
+  return Math.min(MAX_RATE, Math.max(MIN_RATE, rate));
+}
+
 export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerState {
   switch (event.type) {
     case "select":
@@ -91,7 +95,7 @@ export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerSta
     case "setRate":
       // reducer 是最后一道边界，将有限数值的倍速限制在产品范围内；非有限值直接忽略。
       if (!Number.isFinite(event.value)) return state;
-      return { ...state, rate: Math.min(MAX_RATE, Math.max(MIN_RATE, event.value)) };
+      return { ...state, rate: clampRate(event.value) };
     case "stepRate":
       // 快捷键连发时同一帧内可能到达多次，基于 reducer 中的最新倍速累加，而不是组件闭包里的旧值。
       return playerReducer(state, {
