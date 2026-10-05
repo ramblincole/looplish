@@ -1,0 +1,106 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast),
+    color var(--dur-fast),
+    background-color var(--dur-fast),
+    filter var(--dur-fast);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.primary {
+  padding: 11px 22px;
+  background: var(--lamp);
+  border-color: var(--lamp);
+  color: var(--lamp-ink);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.ghost {
+  padding: 7px 13px;
+  background: transparent;
+  border-color: var(--ink-line);
+  color: var(--chalk-dim);
+}
+
+.ghost:hover:not(:disabled) {
+  border-color: var(--ink-line-2);
+  color: var(--chalk);
+  background: var(--ink-raised);
+}
+
+.danger {
+  padding: 7px 13px;
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.transport,
+.transportMain {
+  min-width: 46px;
+  height: 42px;
+  padding: 0 12px;
+  background: var(--ink-sunk);
+  border-color: var(--ink-line);
+  color: var(--chalk-dim);
+}
+
+.transport:hover:not(:disabled) {
+  border-color: var(--ink-line-2);
+  color: var(--chalk);
+}
+
+/* 主播放键：走带区唯一的琥珀实心按钮 */
+.transportMain {
+  min-width: 62px;
+  background: var(--lamp);
+  border-color: var(--lamp);
+  color: var(--lamp-ink);
+  font-size: 16px;
+}
+
+.transportMain:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.reveal {
+  height: 42px;
+  padding: 0 18px;
+  background: transparent;
+  border-color: var(--lamp);
+  color: var(--lamp);
+  font-size: 14px;
+}
+
+.reveal:hover:not(:disabled) {
+  background: var(--lamp-soft);
+}

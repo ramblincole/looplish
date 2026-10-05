@@ -1,4 +1,5 @@
 import type { JobResult } from "../../api/types";
+import { usePlayhead } from "./playerContext";
 
 type Sentence = JobResult["sentences"][number];
 
@@ -27,13 +28,13 @@ function tokenize(sentence: Sentence): Token[] {
 
 export function VeiledTranscript({
   sentence,
-  revealed,
-  currentTime
+  revealed
 }: {
   sentence: Sentence;
   revealed: boolean;
-  currentTime: number;
 }) {
+  // 只有这里订阅播放时间：词高亮每帧更新，不牵动练习台的其他部分。
+  const currentTime = usePlayhead();
   const tokens = tokenize(sentence);
   return (
     <div className="transcript" aria-live="polite">

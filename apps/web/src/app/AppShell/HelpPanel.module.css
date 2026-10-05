@@ -1,0 +1,19 @@
+.list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px 18px;
+  margin: 0 0 20px;
+  font-size: 13.5px;
+}
+
+.list dt {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--lamp);
+  white-space: nowrap;
+}
+
+.list dd {
+  margin: 0;
+  color: var(--chalk-dim);
+}

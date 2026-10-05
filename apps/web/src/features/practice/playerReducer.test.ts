@@ -204,3 +204,27 @@ it("never mutates the previous state", () => {
   expect([...before.visitedIndexes]).toEqual([1]);
   expect(after.visitedIndexes).not.toBe(before.visitedIndexes);
 });
+
+describe("listenCounts", () => {
+  it("starts empty", () => {
+    expect(initialPlayerState.listenCounts.size).toBe(0);
+  });
+
+  it("counts every completed play per sentence, including loops and auto advance", () => {
+    const state = run([completed(), completed(), { type: "select", index: 2 }, completed()], {
+      repeat: 3
+    });
+    expect(state.listenCounts.get(0)).toBe(2);
+    expect(state.listenCounts.get(2)).toBe(1);
+    expect(state.listenCounts.has(1)).toBe(false);
+
+    const advanced = run([completed()], { autoAdvance: true });
+    expect(advanced.listenCounts.get(0)).toBe(1);
+    expect(advanced.sentenceIndex).toBe(1);
+  });
+
+  it("is cleared by reset because sentence indexes change", () => {
+    const state = run([completed(), { type: "reset" }]);
+    expect(state.listenCounts.size).toBe(0);
+  });
+});

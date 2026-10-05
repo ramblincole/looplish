@@ -1,0 +1,77 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field[data-layout="inline"] {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--chalk-faint);
+}
+
+.field :is(select, input:not([type="checkbox"], [type="radio"], [type="range"])) {
+  padding: 8px 10px;
+  background: var(--ink-sunk);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+}
+
+.field[data-layout="inline"]
+  :is(select, input:not([type="checkbox"], [type="radio"], [type="range"])) {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.field :is(select, input):focus-visible {
+  border-color: var(--lamp);
+}
+
+.field :is(select, input)[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.toggle input {
+  inline-size: 15px;
+  block-size: 15px;
+  accent-color: var(--lamp);
+  cursor: pointer;
+}
+
+.rangeHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.readout {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--lamp);
+}
+
+.field[data-invalid="true"] .readout {
+  color: var(--danger);
+}
+
+.range {
+  inline-size: 100%;
+  accent-color: var(--lamp);
+}

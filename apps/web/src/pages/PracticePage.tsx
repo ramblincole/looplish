@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import type { Job, JobResult } from "../api/types";
+import { useToast } from "../components/Toast/toastContext";
 import { errorMessage } from "../features/intake/processing";
 import { isActive, useJob, useJobResult } from "../features/jobs/useJobs";
 import { ExportMenu } from "../features/practice/ExportMenu";
@@ -10,6 +11,8 @@ import { ResegmentDialog } from "../features/practice/ResegmentDialog";
 import { SentenceReel } from "../features/practice/SentenceReel";
 import { VeiledTranscript } from "../features/practice/VeiledTranscript";
 import { usePlayer, usePlayerActions } from "../features/practice/playerContext";
+import { formatRate, formatRepeat } from "../features/practice/playerLabels";
+import { clampRate, nextRepeat, stepRate } from "../features/practice/playerReducer";
 import { useAudioController } from "../features/practice/useAudioController";
 import { useHotkeys } from "../features/practice/useHotkeys";
 
@@ -121,7 +124,7 @@ function PracticeLoader({ jobId }: { jobId: string }) {
 }
 
 function PracticeWorkspace({ result }: { result: JobResult }) {
-  const { state, sentenceCount, send, completed } = usePlayer();
+  const { state, sentenceCount, send, completed, playhead } = usePlayer();
   const actions = usePlayerActions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -139,16 +142,30 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
     if (state.playing) setPlaybackError(null);
   }, [state.playing]);
 
-  const { time } = useAudioController(audioRef, sentence, state, completed, onPlaybackError);
+  useAudioController(audioRef, sentence, state, playhead, completed, onPlaybackError);
 
-  useHotkeys(
-    {
-      ...actions,
-      dismiss: () => setResegmentOpen(false)
+  const notify = useToast();
+  // 快捷键改设置时看不到控件变化，用 toast 告知新值。新值按当前已提交状态推算，
+  // 与 reducer 的计算一致；同一帧内连按多次时提示文字可能落后一次，设置本身不受影响。
+  useHotkeys({
+    ...actions,
+    cycleRepeat: () => {
+      actions.cycleRepeat();
+      notify(`循环：${formatRepeat(nextRepeat(state.repeat))}`);
     },
-    // 对话框打开时只保留 Escape，其余按键交给对话框里的表单。
-    !resegmentOpen
-  );
+    slower: () => {
+      actions.slower();
+      notify(`语速 ${formatRate(clampRate(stepRate(state.rate, -1)))}`);
+    },
+    faster: () => {
+      actions.faster();
+      notify(`语速 ${formatRate(clampRate(stepRate(state.rate, 1)))}`);
+    },
+    toggleAutoAdvance: () => {
+      actions.toggleAutoAdvance();
+      notify(`自动下一句：${state.autoAdvance ? "关" : "开"}`);
+    }
+  });
 
   return (
     <>
@@ -171,9 +188,7 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
           <h2 id="current-sentence-title">
             第 {state.sentenceIndex + 1} / {sentenceCount} 句
           </h2>
-          {sentence ? (
-            <VeiledTranscript sentence={sentence} revealed={state.revealed} currentTime={time} />
-          ) : null}
+          {sentence ? <VeiledTranscript sentence={sentence} revealed={state.revealed} /> : null}
           <button
             type="button"
             className="secondary"
@@ -191,10 +206,6 @@ function PracticeWorkspace({ result }: { result: JobResult }) {
             preload="auto"
             onError={() => setPlaybackError("音频加载失败，请刷新页面或稍后重试。")}
           />
-          <p className="hotkey-hint">
-            快捷键：Space 播放/暂停 · R 重听 · ←/→ 切句 · Enter 显示文本 · L 循环 · [ ] 语速 · A
-            自动下一句
-          </p>
         </section>
       </div>
     </>

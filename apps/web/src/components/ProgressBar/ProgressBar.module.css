@@ -1,0 +1,18 @@
+.track {
+  block-size: 5px;
+  overflow: hidden;
+  background: var(--ink-sunk);
+  border-radius: 3px;
+}
+
+.track[data-size="thin"] {
+  block-size: 3px;
+  border-radius: 2px;
+}
+
+.fill {
+  block-size: 100%;
+  background: var(--lamp);
+  border-radius: inherit;
+  transition: inline-size 0.3s ease;
+}
