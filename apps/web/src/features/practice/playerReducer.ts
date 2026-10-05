@@ -19,6 +19,8 @@ export type PlayerState = {
   visitedIndexes: ReadonlySet<number>;
   /** 每次「从句首重听」加一，AudioController 据此区分重听与暂停后继续。 */
   replayCount: number;
+  /** 句子索引 → 本次练习中听完的次数；循环每播完一遍都算一次。 */
+  listenCounts: ReadonlyMap<number, number>;
 };
 
 export type PlayerEvent =
@@ -49,7 +51,8 @@ export const initialPlayerState: PlayerState = {
   autoAdvance: false,
   alwaysHide: true,
   visitedIndexes: new Set(),
-  replayCount: 0
+  replayCount: 0,
+  listenCounts: new Map()
 };
 
 export function nextRepeat(repeat: Repeat): Repeat {
@@ -114,10 +117,20 @@ export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerSta
       return { ...state, alwaysHide: !state.alwaysHide };
     case "completed": {
       const visitedIndexes = new Set([...state.visitedIndexes, state.sentenceIndex]);
+      const listenCounts = new Map(state.listenCounts).set(
+        state.sentenceIndex,
+        (state.listenCounts.get(state.sentenceIndex) ?? 0) + 1
+      );
       const required = state.repeat === "infinite" ? Number.POSITIVE_INFINITY : state.repeat;
       // 循环次数未满足时留在当前句，由 Provider 在留白结束后重新播放。
       if (state.playCount + 1 < required) {
-        return { ...state, playCount: state.playCount + 1, playing: false, visitedIndexes };
+        return {
+          ...state,
+          playCount: state.playCount + 1,
+          playing: false,
+          visitedIndexes,
+          listenCounts
+        };
       }
       if (state.autoAdvance && state.sentenceIndex + 1 < event.sentenceCount) {
         // 自动前进只在还有下一句时发生，末句永远不会越界。
@@ -127,20 +140,22 @@ export function playerReducer(state: PlayerState, event: PlayerEvent): PlayerSta
           playCount: 0,
           playing: false,
           revealed: state.alwaysHide ? false : state.revealed,
-          visitedIndexes
+          visitedIndexes,
+          listenCounts
         };
       }
-      return { ...state, playCount: 0, playing: false, visitedIndexes };
+      return { ...state, playCount: 0, playing: false, visitedIndexes, listenCounts };
     }
     case "reset":
-      // 重新切句后句子索引整体失效：回到第 0 句并清空已练标记，只保留用户的练习偏好。
+      // 重新切句后句子索引整体失效：回到第 0 句并清空已练标记和听句计数，只保留用户的练习偏好。
       return {
         ...state,
         sentenceIndex: 0,
         playCount: 0,
         playing: false,
         revealed: state.alwaysHide ? false : state.revealed,
-        visitedIndexes: new Set()
+        visitedIndexes: new Set(),
+        listenCounts: new Map()
       };
   }
 }

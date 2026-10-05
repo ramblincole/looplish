@@ -654,6 +654,24 @@ describe("loops, gaps and auto advance", () => {
     act(() => vi.advanceTimersByTime(10_000));
     expect(media.plays).toBe(2);
   });
+
+  it("stretches a sentence-length gap by the playback rate", async () => {
+    renderPractice();
+    await ready();
+    fireEvent.change(screen.getByLabelText("循环次数"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("跟读留白"), { target: { value: "sentence" } });
+    fireEvent.change(screen.getByLabelText("语速"), { target: { value: "0.8" } });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+    fireEvent.click(playButton());
+    playTo(2.0);
+
+    // 第一句 duration = 1.7 秒，0.8× 实际听了 2.125 秒。
+    act(() => vi.advanceTimersByTime(2124));
+    expect(media.plays).toBe(1);
+    act(() => vi.advanceTimersByTime(1));
+    expect(media.plays).toBe(2);
+  });
 });
 
 describe("hotkeys", () => {

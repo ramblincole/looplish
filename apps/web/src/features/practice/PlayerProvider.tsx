@@ -68,14 +68,21 @@ export function PlayerProvider({ result, children }: { result: JobResult; childr
     // 循环已满且不自动前进（或已到末句）时停在原处，不安排任何计时。
     if (!continues) return;
     const finished = result.sentences[current.sentenceIndex];
+    // 「与句子等长」按实际听到的时长计算：慢速播放时一句话听得更久，跟读留白也相应变长。
     const seconds =
-      current.gapMode.kind === "fixed" ? current.gapMode.seconds : (finished?.duration ?? 0);
+      current.gapMode.kind === "fixed"
+        ? current.gapMode.seconds
+        : (finished?.duration ?? 0) / current.rate;
     setWaiting(true);
-    gapTimer.current = setTimeout(() => {
-      gapTimer.current = null;
-      setWaiting(false);
-      dispatch({ type: "setPlaying", value: true });
-    }, seconds * 1000);
+    // 取整到毫秒：浮点除法（如 1.7 / 0.8）会得到 2124.9999… 这类值，计时器对小数的处理不一致。
+    gapTimer.current = setTimeout(
+      () => {
+        gapTimer.current = null;
+        setWaiting(false);
+        dispatch({ type: "setPlaying", value: true });
+      },
+      Math.round(seconds * 1000)
+    );
   }, [clearGap, result.sentences, sentenceCount]);
 
   const value = useMemo<PlayerContextValue>(
