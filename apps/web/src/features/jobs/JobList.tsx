@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Job } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog/ConfirmDialog";
 import { errorMessage } from "../intake/processing";
@@ -16,6 +16,16 @@ export function JobList({ jobs, onDeleted }: Props) {
   const remove = useDeleteJob();
   const [pending, setPending] = useState<Job | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
+  const [refocus, setRefocus] = useState(false);
+
+  useEffect(() => {
+    // 删除失败的回调先于重新渲染执行，那时删除按钮仍处于禁用状态，focus() 不会生效；
+    // 等删除结束、按钮恢复可用后再把焦点送回去。
+    if (refocus && !remove.isPending) {
+      trigger.current?.focus();
+      setRefocus(false);
+    }
+  }, [refocus, remove.isPending]);
 
   function confirm() {
     const target = pending;
@@ -24,8 +34,8 @@ export function JobList({ jobs, onDeleted }: Props) {
     if (target) {
       remove.mutate(target.id, {
         onSuccess: onDeleted,
-        // 删除失败时被删行还在，把焦点送回它的删除按钮。
-        onError: () => trigger.current?.focus()
+        // 删除失败时被删行还在，焦点应回到它的删除按钮（见上面的 effect）。
+        onError: () => setRefocus(true)
       });
     }
   }

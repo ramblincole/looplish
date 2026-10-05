@@ -57,6 +57,7 @@ type State = {
   requests: { jobs: number; created: unknown[]; uploads: string[]; deleted: string[] };
   createError: Record<string, unknown> | null;
   uploadError: Record<string, unknown> | null;
+  deleteError: { status: number; code: string; detail: string } | null;
 };
 
 let state: State;
@@ -69,7 +70,8 @@ function freshState(): State {
     jobsStatus: 200,
     requests: { jobs: 0, created: [], uploads: [], deleted: [] },
     createError: null,
-    uploadError: null
+    uploadError: null,
+    deleteError: null
   };
 }
 
@@ -118,6 +120,10 @@ const server = setupServer(
   }),
   http.delete("*/api/v1/jobs/:id", ({ params }) => {
     state.requests.deleted.push(String(params.id));
+    if (state.deleteError) {
+      const { status, code, detail } = state.deleteError;
+      return problem(status, code, detail);
+    }
     return new HttpResponse(null, { status: 204 });
   })
 );
@@ -543,6 +549,21 @@ describe("job list", () => {
       expect(screen.getByRole("heading", { name: "已处理的素材" })).toHaveFocus()
     );
     expect(screen.getByText("还没有素材。上面粘贴一个链接就能开始。")).toBeInTheDocument();
+  });
+
+  it("returns focus to the card's delete button when deletion fails", async () => {
+    state.pages = [[job()]];
+    state.deleteError = { status: 409, code: "JOB_RUNNING", detail: "任务正在处理，不能删除。" };
+    const user = userEvent.setup();
+    renderLibrary();
+    const button = await screen.findByRole("button", { name: "删除 Everyday Talk" });
+
+    await user.click(button);
+    await user.click(screen.getByRole("button", { name: "删除" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("任务正在处理，不能删除。");
+    await waitFor(() => expect(button).toHaveFocus());
+    expect(button).toBeEnabled();
   });
 
   it("shows one persistent alert when the list cannot load", async () => {
