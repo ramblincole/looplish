@@ -535,9 +535,9 @@ describe("polling", () => {
       )
     });
 
-    await waitFor(() => expect(state.requests.jobs).toBe(1));
+    await vi.waitFor(() => expect(state.requests.jobs).toBe(1));
     await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
-    await waitFor(() => expect(finished).toEqual(["succeeded"]));
+    await vi.waitFor(() => expect(finished).toEqual(["succeeded"]));
     await act(() => vi.advanceTimersByTimeAsync(10 * ACTIVE_POLL_MS));
     expect(finished).toEqual(["succeeded"]);
   });
