@@ -12,6 +12,7 @@ export function SentenceReel({ sentences }: { sentences: Sentence[] }) {
   const titleId = useId();
   const searchId = useId();
   const currentRef = useRef<HTMLButtonElement | null>(null);
+  const listRef = useRef<HTMLOListElement | null>(null);
   const needle = query.trim().toLowerCase();
   const matches = needle
     ? sentences.filter((sentence) => sentence.text.toLowerCase().includes(needle))
@@ -20,8 +21,18 @@ export function SentenceReel({ sentences }: { sentences: Sentence[] }) {
   const blurred = !state.revealed && needle.length === 0;
 
   useEffect(() => {
-    // 自动前进或快捷键切句后，让当前句保持在清单可见区域内。
-    currentRef.current?.scrollIntoView?.({ block: "nearest" });
+    // 自动前进或快捷键切句后，让当前句保持在清单可见区域内。只调整清单自己的滚动位置：
+    // scrollIntoView 会连带滚动整页，单栏布局时清单在播放台下方，会把走带按钮滚出可视区。
+    const list = listRef.current;
+    const item = currentRef.current;
+    if (!list || !item) return;
+    const listRect = list.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    if (itemRect.top < listRect.top) {
+      list.scrollTop -= listRect.top - itemRect.top;
+    } else if (itemRect.bottom > listRect.bottom) {
+      list.scrollTop += itemRect.bottom - listRect.bottom;
+    }
   }, [state.sentenceIndex]);
 
   return (
@@ -48,7 +59,7 @@ export function SentenceReel({ sentences }: { sentences: Sentence[] }) {
           autoComplete="off"
         />
       </div>
-      <ol className={styles.list}>
+      <ol ref={listRef} className={styles.list}>
         {matches.map((sentence) => {
           const current = sentence.index === state.sentenceIndex;
           const visited = state.visitedIndexes.has(sentence.index);

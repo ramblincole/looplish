@@ -844,6 +844,38 @@ describe("hotkeys", () => {
 });
 
 describe("sentence reel", () => {
+  it("scrolls only the list, never the page, to keep the current row visible", async () => {
+    // jsdom 不做布局：清单可见区设为 100–200px，当前行放在可见区下方 250–280px。
+    const rect = (top: number, bottom: number) =>
+      ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top }) as DOMRect;
+    const rects = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.tagName === "OL") return rect(100, 200);
+        if (this.getAttribute("aria-current") === "true") return rect(250, 280);
+        return rect(0, 0);
+      });
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView
+    });
+    try {
+      renderPractice();
+      await ready();
+      const list = screen.getByRole("list");
+      list.scrollTop = 0;
+
+      key("ArrowRight");
+
+      expect(list.scrollTop).toBe(80);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      rects.mockRestore();
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
   it("blurs the list while the current sentence is veiled and lets search reveal matches", async () => {
     const user = userEvent.setup();
     renderPractice();
