@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import type { Job, JobResult } from "../api/types";
+import type { JobResult } from "../api/types";
 import { useToast } from "../components/Toast/toastContext";
 import { errorMessage } from "../features/intake/processing";
+import { STAGE_LABELS } from "../features/jobs/jobLabels";
 import { isActive, useJob, useJobResult } from "../features/jobs/useJobs";
 import { ExportMenu } from "../features/practice/ExportMenu";
 import { PlayerProvider } from "../features/practice/PlayerProvider";
@@ -15,13 +16,6 @@ import { formatRate, formatRepeat } from "../features/practice/playerLabels";
 import { clampRate, nextRepeat, stepRate } from "../features/practice/playerReducer";
 import { useAudioController } from "../features/practice/useAudioController";
 import { useHotkeys } from "../features/practice/useHotkeys";
-
-const STAGE_LABELS: Record<NonNullable<Job["stage"]>, string> = {
-  downloading: "下载",
-  preparingAudio: "准备音频",
-  transcribing: "转写",
-  segmenting: "切句"
-};
 
 function BackLink() {
   return (

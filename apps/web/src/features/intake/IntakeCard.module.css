@@ -1,0 +1,96 @@
+.card {
+  max-inline-size: 760px;
+  margin: clamp(24px, 6vh, 64px) auto clamp(32px, 6vh, 56px);
+  padding: clamp(24px, 4vw, 40px);
+  background: var(--ink-raised);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-lg);
+  transition:
+    border-color var(--dur-base),
+    background-color var(--dur-base);
+}
+
+.card[data-dragging="true"] {
+  border-color: var(--lamp);
+  background: color-mix(in srgb, var(--lamp) 6%, var(--ink-raised));
+}
+
+.title {
+  margin: 0 0 8px;
+  font-family: var(--font-read);
+  font-size: clamp(26px, 4vw, 38px);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.sub {
+  margin: 0 0 24px;
+  color: var(--chalk-dim);
+  font-size: 15px;
+}
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sourceInput {
+  flex: 1 1 320px;
+  min-inline-size: 0;
+  padding: 11px 14px;
+  background: var(--ink-sunk);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-md);
+  color: var(--chalk);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.sourceInput::placeholder {
+  color: var(--chalk-faint);
+}
+
+/* 不去掉 outline：全局的 :focus-visible 焦点环仍要显示。 */
+.sourceInput:focus {
+  border-color: var(--lamp);
+}
+
+.fileRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+/* 原生文件输入框视觉隐藏，键盘聚焦时把焦点环画在紧随其后的按钮外观标签上 */
+.fileInput:focus-visible + label {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
+}
+
+.hint,
+.note {
+  color: var(--chalk-faint);
+  font-size: 13px;
+}
+
+.note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.selected {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--chalk);
+}
+
+.error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--danger-soft);
+  font-size: 13px;
+}

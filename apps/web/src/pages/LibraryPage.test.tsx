@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -11,7 +11,8 @@ import {
   ACTIVE_POLL_MS,
   HIDDEN_POLL_MS,
   MAX_BACKOFF_MS,
-  pollInterval
+  pollInterval,
+  useJobs
 } from "../features/jobs/useJobs";
 import { installFetchBridge, multipartFields } from "../test/fetchBridge";
 
@@ -55,6 +56,8 @@ type State = {
   jobsStatus: number;
   requests: { jobs: number; created: unknown[]; uploads: string[]; deleted: string[] };
   createError: Record<string, unknown> | null;
+  uploadError: Record<string, unknown> | null;
+  deleteError: { status: number; code: string; detail: string } | null;
 };
 
 let state: State;
@@ -66,7 +69,9 @@ function freshState(): State {
     pages: [[]],
     jobsStatus: 200,
     requests: { jobs: 0, created: [], uploads: [], deleted: [] },
-    createError: null
+    createError: null,
+    uploadError: null,
+    deleteError: null
   };
 }
 
@@ -103,10 +108,22 @@ const server = setupServer(
   }),
   http.post("*/api/v1/jobs/upload", async ({ request }) => {
     state.requests.uploads.push(`${request.headers.get("content-type")}\n${await request.text()}`);
+    if (state.uploadError) {
+      const { status, code, detail } = state.uploadError as {
+        status: number;
+        code: string;
+        detail: string;
+      };
+      return problem(status, code, detail);
+    }
     return HttpResponse.json(job({ status: "queued", progress: 0 }), { status: 202 });
   }),
   http.delete("*/api/v1/jobs/:id", ({ params }) => {
     state.requests.deleted.push(String(params.id));
+    if (state.deleteError) {
+      const { status, code, detail } = state.deleteError;
+      return problem(status, code, detail);
+    }
     return new HttpResponse(null, { status: 204 });
   })
 );
@@ -148,13 +165,11 @@ function renderLibrary(
 }
 
 async function ready() {
-  return screen.findByRole("button", { name: "开始处理" });
+  return screen.findByRole("button", { name: "开始切分" });
 }
 
-async function setNumber(user: ReturnType<typeof userEvent.setup>, label: RegExp, value: string) {
-  const input = screen.getByLabelText(label);
-  await user.clear(input);
-  if (value) await user.type(input, value);
+function setSlider(label: string, value: string) {
+  fireEvent.change(screen.getByRole("slider", { name: label }), { target: { value } });
 }
 
 describe("submission", () => {
@@ -166,8 +181,8 @@ describe("submission", () => {
     renderLibrary();
 
     expect(await screen.findByRole("status")).toHaveTextContent("正在加载运行配置");
-    expect(screen.queryByRole("button", { name: "开始处理" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "上传并处理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "开始切分" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("选择本地文件")).not.toBeInTheDocument();
 
     release();
 
@@ -179,25 +194,23 @@ describe("submission", () => {
     renderLibrary();
     await ready();
 
-    await setNumber(user, /最长句长/, "10");
+    setSlider("最长句长", "10");
     await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "https://example.test/v");
-    await user.click(screen.getByRole("button", { name: "开始处理" }));
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
 
-    await screen.findByText("已加入处理队列。");
-    expect(state.requests.created).toEqual([
-      {
-        source: "https://example.test/v",
-        asrBackend: "local",
-        subtitleSource: "auto",
-        language: "en",
-        makeClips: false,
-        minDuration: 1,
-        maxDuration: 10,
-        hardPause: 0.75,
-        leadPad: 0.2,
-        tailPad: 0.4
-      }
-    ]);
+    await waitFor(() => expect(state.requests.created).toHaveLength(1));
+    expect(state.requests.created[0]).toEqual({
+      source: "https://example.test/v",
+      asrBackend: "local",
+      subtitleSource: "auto",
+      language: "en",
+      makeClips: false,
+      minDuration: 1,
+      maxDuration: 10,
+      hardPause: 0.75,
+      leadPad: 0.2,
+      tailPad: 0.4
+    });
     expect(screen.getByLabelText("视频链接或本机媒体路径")).toHaveValue("");
   });
 
@@ -208,9 +221,9 @@ describe("submission", () => {
 
     await user.clear(screen.getByLabelText("语言"));
     await user.click(screen.getByLabelText("预先生成全部单句音频"));
-    await setNumber(user, /最长句长/, "10");
+    setSlider("最长句长", "10");
     await user.upload(
-      screen.getByLabelText("选择媒体文件"),
+      screen.getByLabelText("选择本地文件"),
       new File(["RIFF"], "talk.wav", { type: "audio/wav" })
     );
 
@@ -219,7 +232,7 @@ describe("submission", () => {
 
     await user.click(screen.getByRole("button", { name: "上传并处理" }));
 
-    await screen.findByText("已上传并加入处理队列。");
+    await waitFor(() => expect(state.requests.uploads).toHaveLength(1));
     const [raw] = state.requests.uploads;
     expect(raw).toMatch(/^multipart\/form-data; boundary=/);
     expect(multipartFields(raw)).toEqual({
@@ -234,6 +247,7 @@ describe("submission", () => {
       leadPad: "0.2",
       tailPad: "0.4"
     });
+    expect(screen.queryByText("已选择：talk.wav")).not.toBeInTheDocument();
   });
 
   it("uses the same options for both entries", async () => {
@@ -241,16 +255,17 @@ describe("submission", () => {
     renderLibrary();
     await ready();
     await user.selectOptions(screen.getByLabelText("字幕来源"), "asr");
-    await setNumber(user, /强制断句停顿/, "1.5");
+    setSlider("强制断句停顿", "1.5");
 
     await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "https://example.test/v");
-    await user.click(screen.getByRole("button", { name: "开始处理" }));
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
+    await user.click(await screen.findByRole("button", { name: "放到后台" }));
     await user.upload(
-      screen.getByLabelText("选择媒体文件"),
+      screen.getByLabelText("选择本地文件"),
       new File(["x"], "a.mp3", { type: "audio/mpeg" })
     );
     await user.click(screen.getByRole("button", { name: "上传并处理" }));
-    await screen.findByText("已上传并加入处理队列。");
+    await waitFor(() => expect(state.requests.uploads).toHaveLength(1));
 
     const json = state.requests.created[0] as Record<string, unknown>;
     const form = multipartFields(state.requests.uploads[0]);
@@ -259,17 +274,68 @@ describe("submission", () => {
     expect(form.subtitleSource).toBe("asr");
   });
 
-  it("accepts a dropped file", async () => {
+  it("accepts a file dropped anywhere on the intake card and lets it be cancelled", async () => {
+    const user = userEvent.setup();
     renderLibrary();
     await ready();
-    const zone = screen.getByText("或把文件拖到这里").closest("div")!;
+    const card = screen.getByRole("region", { name: "把一段视频拆成一句一句来听" });
 
-    fireEvent.drop(zone, {
-      dataTransfer: { files: [new File(["x"], "dropped.mp4", { type: "video/mp4" })] }
+    fireEvent.dragOver(card, { dataTransfer: { types: ["Files"] } });
+    expect(card).toHaveAttribute("data-dragging", "true");
+    fireEvent.drop(card, {
+      dataTransfer: {
+        types: ["Files"],
+        files: [new File(["x"], "dropped.mp4", { type: "video/mp4" })]
+      }
     });
 
+    expect(card).not.toHaveAttribute("data-dragging");
     expect(screen.getByText("已选择：dropped.mp4")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传并处理" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByText("已选择：dropped.mp4")).not.toBeInTheDocument();
+    expect(screen.getByText("也可以直接拖放到这个区域")).toBeInTheDocument();
+  });
+
+  it("ignores drags that do not carry files", async () => {
+    renderLibrary();
+    await ready();
+    const card = screen.getByRole("region", { name: "把一段视频拆成一句一句来听" });
+
+    fireEvent.dragOver(card, { dataTransfer: { types: ["text/uri-list"] } });
+
+    expect(card).not.toHaveAttribute("data-dragging");
+  });
+
+  it("clears a previous upload error when a new file is dropped", async () => {
+    state.uploadError = {
+      status: 413,
+      code: "UPLOAD_TOO_LARGE",
+      detail: "文件超过大小上限。"
+    };
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+    const card = screen.getByRole("region", { name: "把一段视频拆成一句一句来听" });
+
+    await user.upload(
+      screen.getByLabelText("选择本地文件"),
+      new File(["x"], "big.mp4", { type: "video/mp4" })
+    );
+    await user.click(screen.getByRole("button", { name: "上传并处理" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("文件超过大小上限。");
+
+    fireEvent.drop(card, {
+      dataTransfer: {
+        types: ["Files"],
+        files: [new File(["y"], "next.mp4", { type: "video/mp4" })]
+      }
+    });
+
+    expect(screen.getByText("已选择：next.mp4")).toBeInTheDocument();
+    // TanStack 的状态通知在下一个宏任务里发出，需等待错误提示消失。
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
   });
 
   it("warns about files that do not look like media without blocking them", async () => {
@@ -278,7 +344,7 @@ describe("submission", () => {
     await ready();
 
     await user.upload(
-      screen.getByLabelText("选择媒体文件"),
+      screen.getByLabelText("选择本地文件"),
       new File(["x"], "notes.pdf", { type: "application/pdf" })
     );
 
@@ -290,7 +356,7 @@ describe("submission", () => {
     const user = userEvent.setup();
     renderLibrary();
     await ready();
-    const picker = screen.getByLabelText("选择媒体文件");
+    const picker = screen.getByLabelText("选择本地文件");
 
     for (let step = 0; step < 30 && document.activeElement !== picker; step += 1) {
       await user.tab();
@@ -299,23 +365,26 @@ describe("submission", () => {
     expect(picker).toHaveFocus();
   });
 
-  it("blocks out-of-range numbers with the same limits as the server", async () => {
-    const user = userEvent.setup();
+  it("opens the settings drawer and blocks both entries while durations conflict", async () => {
     renderLibrary();
     await ready();
+    const drawer = screen.getByText("识别与切分设置").closest("details")!;
+    expect(drawer).not.toHaveAttribute("open");
 
-    await setNumber(user, /最短句长/, "12");
-    expect(screen.getByRole("alert")).toHaveTextContent("最短句长需在 0.2 到 10 秒之间。");
-    expect(screen.getByRole("button", { name: "开始处理" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "上传并处理" })).toBeDisabled();
-    expect(screen.getByLabelText(/最短句长/)).toHaveAttribute("aria-invalid", "true");
+    setSlider("最短句长", "8");
+    setSlider("最长句长", "8");
 
-    await setNumber(user, /最短句长/, "8");
-    await setNumber(user, /最长句长/, "8");
+    expect(drawer).toHaveAttribute("open");
     expect(screen.getByRole("alert")).toHaveTextContent("最短句长必须小于最长句长。");
+    expect(screen.getByRole("slider", { name: "最长句长" })).toHaveAttribute(
+      "aria-invalid",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: "开始切分" })).toBeDisabled();
 
-    await setNumber(user, /最长句长/, "");
-    expect(screen.getByRole("alert")).toHaveTextContent("最长句长需要填写数字。");
+    setSlider("最长句长", "12");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始切分" })).toBeEnabled();
   });
 
   it("shows the server's problem detail when creation fails", async () => {
@@ -329,7 +398,7 @@ describe("submission", () => {
     await ready();
 
     await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "C:/media/talk.mp4");
-    await user.click(screen.getByRole("button", { name: "开始处理" }));
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("此服务未开放本机文件路径。");
   });
@@ -341,17 +410,35 @@ describe("submission", () => {
     await ready();
 
     await user.type(screen.getByLabelText("视频链接"), "C:/media/talk.mp4");
-    await user.click(screen.getByRole("button", { name: "开始处理" }));
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent("只接受 http(s) 链接");
     expect(state.requests.created).toEqual([]);
+  });
+
+  it("keeps the settings drawer open while blocking reasons are showing", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+    const drawer = screen.getByText("识别与切分设置").closest("details")!;
+
+    setSlider("最短句长", "8");
+    setSlider("最长句长", "8");
+    expect(drawer).toHaveAttribute("open");
+
+    // 提交按钮仍被禁用时不允许收起，否则用户看不到原因。
+    await user.click(screen.getByText("识别与切分设置"));
+
+    expect(drawer).toHaveAttribute("open");
+    expect(screen.getByRole("alert")).toHaveTextContent("最短句长必须小于最长句长。");
+    expect(screen.getByRole("alert")).toBeVisible();
   });
 
   it("offers only the backends the server reports", async () => {
     renderLibrary();
     await ready();
 
-    const options = screen.getByLabelText("识别后端").querySelectorAll("option");
+    const options = screen.getByLabelText("识别引擎").querySelectorAll("option");
     expect([...options].map((option) => option.value)).toEqual(["local"]);
   });
 });
@@ -384,10 +471,11 @@ describe("job list", () => {
     renderLibrary();
 
     const progress = await screen.findByRole("progressbar", { name: "Running Talk 处理进度" });
-    expect(progress).toHaveAttribute("value", "0.5");
+    expect(progress).toHaveAttribute("aria-valuenow", "50");
     expect(progress).toHaveAttribute("aria-valuetext", "50%");
-    expect(screen.getByText("处理中")).toBeInTheDocument();
-    expect(screen.getByText("（转写）")).toBeInTheDocument();
+    expect(screen.getByText("处理中·转写")).toBeInTheDocument();
+    expect(screen.getByText("识别中")).toBeInTheDocument();
+    expect(screen.getByText("已完成").closest("li")).toHaveAttribute("data-status", "succeeded");
     expect(screen.getByText("失败原因：没有可用的人工字幕。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除 Running Talk" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "删除 Broken Talk" })).toBeEnabled();
@@ -440,22 +528,42 @@ describe("job list", () => {
     expect(router.state.location.pathname).toBe("/jobs/0123456789ABCDEF");
   });
 
-  it("deletes only after confirmation", async () => {
-    state.pages = [[job()]];
-    const confirm = vi
-      .spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
+  it("deletes only after confirmation and then moves focus to the list heading", async () => {
+    state.pages = [[job()], []];
     const user = userEvent.setup();
     renderLibrary();
     const button = await screen.findByRole("button", { name: "删除 Everyday Talk" });
 
     await user.click(button);
+    const dialog = screen.getByRole("dialog", { name: "删除素材" });
+    expect(dialog).toHaveTextContent("删除「Everyday Talk」及其全部产物？此操作无法撤销。");
+    await user.click(screen.getByRole("button", { name: "取消" }));
     expect(state.requests.deleted).toEqual([]);
+    expect(button).toHaveFocus();
 
     await user.click(button);
+    await user.click(screen.getByRole("button", { name: "删除" }));
+
     await waitFor(() => expect(state.requests.deleted).toEqual(["0123456789ABCDEF"]));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "已处理的素材" })).toHaveFocus()
+    );
+    expect(screen.getByText("还没有素材。上面粘贴一个链接就能开始。")).toBeInTheDocument();
+  });
+
+  it("returns focus to the card's delete button when deletion fails", async () => {
+    state.pages = [[job()]];
+    state.deleteError = { status: 409, code: "JOB_RUNNING", detail: "任务正在处理，不能删除。" };
+    const user = userEvent.setup();
+    renderLibrary();
+    const button = await screen.findByRole("button", { name: "删除 Everyday Talk" });
+
+    await user.click(button);
+    await user.click(screen.getByRole("button", { name: "删除" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("任务正在处理，不能删除。");
+    await waitFor(() => expect(button).toHaveFocus());
+    expect(button).toBeEnabled();
   });
 
   it("shows one persistent alert when the list cannot load", async () => {
@@ -522,6 +630,24 @@ describe("polling", () => {
 
     expect(state.requests.jobs).toBe(1);
   });
+
+  it("reports each job once when it leaves the active states", async () => {
+    state.pages = [[job({ status: "running", progress: 0.4 })], [job({ status: "succeeded" })]];
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const finished: string[] = [];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderHook(() => useJobs({ onFinished: (item) => finished.push(item.status) }), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      )
+    });
+
+    await vi.waitFor(() => expect(state.requests.jobs).toBe(1));
+    await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
+    await vi.waitFor(() => expect(finished).toEqual(["succeeded"]));
+    await act(() => vi.advanceTimersByTimeAsync(10 * ACTIVE_POLL_MS));
+    expect(finished).toEqual(["succeeded"]);
+  });
 });
 
 describe("pollInterval", () => {
@@ -539,5 +665,118 @@ describe("pollInterval", () => {
     expect(pollInterval(page("running"), 1, false)).toBe(2 * ACTIVE_POLL_MS);
     expect(pollInterval(page("running"), 3, false)).toBe(8 * ACTIVE_POLL_MS);
     expect(pollInterval(page("running"), 20, false)).toBe(MAX_BACKOFF_MS);
+  });
+});
+
+describe("progress overlay", () => {
+  async function submitUrl(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "https://example.test/v");
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
+  }
+
+  it("follows the new job from the polled list and offers to start practising", async () => {
+    state.pages = [
+      [],
+      [job({ status: "running", stage: "transcribing", progress: 0.4, message: "正在识别" })],
+      [job({ status: "succeeded", sentenceCount: 24 })]
+    ];
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"], shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { router } = renderLibrary();
+    await ready();
+
+    await submitUrl(user);
+
+    const dialog = await screen.findByRole("dialog", { name: "正在处理" });
+    expect(dialog).toHaveTextContent("Everyday Talk");
+    expect(await screen.findByText("处理中·转写 · 正在识别")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "处理进度" })).toHaveAttribute(
+      "aria-valuenow",
+      "40"
+    );
+
+    await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
+    expect(await screen.findByRole("dialog", { name: "处理完成 · 共 24 句" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始练习" })).toHaveFocus();
+    // 浮层正在展示这个任务，不再额外弹出完成提示。先冲刷 effect，否则可能在 toast 发出之前就断言了。
+    await act(async () => {});
+    expect(screen.queryByText("「Everyday Talk」处理完成")).not.toBeInTheDocument();
+
+    // 进入练习台后会请求任务与结果；这里只验证跳转，给出最小响应避免未处理请求。
+    server.use(
+      http.get("*/api/v1/jobs/:id", () => HttpResponse.json(job())),
+      http.get("*/api/v1/jobs/:id/result", () => problem(404, "RESULT_NOT_FOUND", "结果不存在。"))
+    );
+    await user.click(screen.getByRole("button", { name: "开始练习" }));
+    // 路由跳转是异步提交的，点击返回时 location 可能还没更新，所以等待而不是立即断言。
+    // 练习台路由是懒加载的，冷启动时首次加载可能超过默认的 1 秒，所以放宽超时。
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/jobs/0123456789ABCDEF"), {
+      timeout: 5000
+    });
+  });
+
+  it("shows the failure reason", async () => {
+    state.pages = [
+      [],
+      [
+        job({
+          status: "failed",
+          progress: 0.3,
+          message: "处理失败",
+          error: { code: "DOWNLOAD_FAILED", detail: "无法下载该媒体。" }
+        })
+      ]
+    ];
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await submitUrl(user);
+
+    const dialog = await screen.findByRole("dialog", { name: "处理失败" });
+    expect(dialog).toHaveTextContent("无法下载该媒体。");
+    await user.click(screen.getByRole("button", { name: "关闭" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("returns focus to the library heading when the overlay is closed", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await user.upload(
+      screen.getByLabelText("选择本地文件"),
+      new File(["x"], "a.mp3", { type: "audio/mpeg" })
+    );
+    await user.click(screen.getByRole("button", { name: "上传并处理" }));
+    await screen.findByRole("dialog", { name: "正在处理" });
+
+    await user.click(screen.getByRole("button", { name: "放到后台" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "已处理的素材" })).toHaveFocus();
+  });
+
+  it("toasts once when a backgrounded job finishes", async () => {
+    state.pages = [
+      [],
+      [job({ status: "running", progress: 0.5, message: "正在识别" })],
+      [job({ status: "succeeded" })]
+    ];
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"], shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderLibrary();
+    await ready();
+
+    await submitUrl(user);
+    await user.click(await screen.findByRole("button", { name: "放到后台" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // 等列表拿到运行中的任务（此时轮询定时器才存在），再推进时间。
+    await screen.findByText("处理中");
+
+    await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
+    expect(await screen.findByText("「Everyday Talk」处理完成")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(10 * ACTIVE_POLL_MS));
+    expect(screen.getAllByText("「Everyday Talk」处理完成")).toHaveLength(1);
   });
 });
