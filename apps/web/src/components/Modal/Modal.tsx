@@ -12,7 +12,10 @@ import styles from "./Modal.module.css";
 import { ModalRegistryContext } from "./modalRegistry";
 
 const FOCUSABLE =
-  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not(:disabled), input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+// 已打开的弹层（按打开顺序）。只有最上面一个响应卡片外的按键，叠放时不会互相抢键。
+const openSurfaces: object[] = [];
 
 export type ModalProps = {
   open: boolean;
@@ -35,6 +38,43 @@ function ModalSurface({ onClose, title, returnFocusTo, children }: ModalProps) {
 
   useEffect(() => register(), [register]);
 
+  // 监听函数里要用最新的 onClose，又不想因为它变化而反复挂载监听。
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  // 焦点离开卡片（例如提交按钮被禁用后焦点落到 body）时，卡片上的 onKeyDown 收不到按键，
+  // 于是 Escape 失效、Tab 会走进被遮住的页面。所以在 document 捕获阶段补一道兜底。
+  useEffect(() => {
+    const surface = {};
+    openSurfaces.push(surface);
+    function onDocumentKeyDown(event: globalThis.KeyboardEvent) {
+      if (openSurfaces[openSurfaces.length - 1] !== surface) return;
+      const dialog = dialogRef.current;
+      if (dialog === null) return;
+      // 目标在卡片内的按键交给卡片自己的 onKeyDown，避免处理两次。
+      if (event.target instanceof Node && dialog.contains(event.target)) return;
+      if (event.key === "Escape") {
+        // 输入法组字时的 Escape 只用来取消候选词，不能关闭弹层。
+        if (event.isComposing) return;
+        event.preventDefault();
+        onCloseRef.current();
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        const focusable = dialog.querySelectorAll<HTMLElement>(FOCUSABLE);
+        // 把焦点拉回卡片：Tab 到第一项，Shift+Tab 到最后一项；没有可聚焦元素时落在卡片上。
+        const target = event.shiftKey ? focusable[focusable.length - 1] : focusable[0];
+        (target ?? dialog).focus();
+      }
+    }
+    document.addEventListener("keydown", onDocumentKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onDocumentKeyDown, true);
+      openSurfaces.splice(openSurfaces.indexOf(surface), 1);
+    };
+  }, []);
+
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
@@ -48,6 +88,8 @@ function ModalSurface({ onClose, title, returnFocusTo, children }: ModalProps) {
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
+      // 输入法组字时的 Escape 只用来取消候选词，不能关闭弹层。
+      if (event.nativeEvent.isComposing) return;
       // Escape 由弹层自己消费，不再冒泡到页面上的其他监听者。
       event.preventDefault();
       event.stopPropagation();

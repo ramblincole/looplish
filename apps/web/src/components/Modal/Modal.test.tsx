@@ -103,4 +103,42 @@ describe("Modal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it("closes on Escape even when focus has dropped to the body", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    await user.click(screen.getByRole("button", { name: "打开设置" }));
+    // 模拟提交按钮被禁用后焦点落到 body。
+    (document.activeElement as HTMLElement).blur();
+    expect(document.body).toHaveFocus();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("pulls Tab back into the dialog when focus has dropped to the body", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "打开设置" }));
+    (document.activeElement as HTMLElement).blur();
+
+    fireEvent.keyDown(document.body, { key: "Tab" });
+
+    expect(screen.getByLabelText("第一项")).toHaveFocus();
+  });
+
+  it("ignores Escape while an IME composition is in progress", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    await user.click(screen.getByRole("button", { name: "打开设置" }));
+
+    fireEvent.keyDown(screen.getByLabelText("第一项"), { key: "Escape", isComposing: true });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
 });
