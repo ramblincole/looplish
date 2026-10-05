@@ -628,3 +628,92 @@ describe("pollInterval", () => {
     expect(pollInterval(page("running"), 20, false)).toBe(MAX_BACKOFF_MS);
   });
 });
+
+describe("progress overlay", () => {
+  async function submitUrl(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByLabelText("视频链接或本机媒体路径"), "https://example.test/v");
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
+  }
+
+  it("follows the new job from the polled list and offers to start practising", async () => {
+    state.pages = [
+      [],
+      [job({ status: "running", stage: "transcribing", progress: 0.4, message: "正在识别" })],
+      [job({ status: "succeeded", sentenceCount: 24 })]
+    ];
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"], shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { router } = renderLibrary();
+    await ready();
+
+    await submitUrl(user);
+
+    const dialog = await screen.findByRole("dialog", { name: "正在处理" });
+    expect(dialog).toHaveTextContent("Everyday Talk");
+    expect(await screen.findByText("处理中·转写 · 正在识别")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "处理进度" })).toHaveAttribute(
+      "aria-valuenow",
+      "40"
+    );
+
+    await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
+    expect(await screen.findByRole("dialog", { name: "处理完成 · 共 24 句" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始练习" })).toHaveFocus();
+    // 浮层正在展示这个任务，不再额外弹出完成提示。
+    expect(screen.queryByText("「Everyday Talk」处理完成")).not.toBeInTheDocument();
+
+    // 进入练习台后会请求任务与结果；这里只验证跳转，给出最小响应避免未处理请求。
+    server.use(
+      http.get("*/api/v1/jobs/:id", () => HttpResponse.json(job())),
+      http.get("*/api/v1/jobs/:id/result", () => problem(404, "RESULT_NOT_FOUND", "结果不存在。"))
+    );
+    await user.click(screen.getByRole("button", { name: "开始练习" }));
+    // 路由跳转是异步提交的，点击返回时 location 可能还没更新，所以等待而不是立即断言。
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/jobs/0123456789ABCDEF"));
+  });
+
+  it("shows the failure reason", async () => {
+    state.pages = [
+      [],
+      [
+        job({
+          status: "failed",
+          progress: 0.3,
+          message: "处理失败",
+          error: { code: "DOWNLOAD_FAILED", detail: "无法下载该媒体。" }
+        })
+      ]
+    ];
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await submitUrl(user);
+
+    const dialog = await screen.findByRole("dialog", { name: "处理失败" });
+    expect(dialog).toHaveTextContent("无法下载该媒体。");
+    await user.click(screen.getByRole("button", { name: "关闭" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("toasts once when a backgrounded job finishes", async () => {
+    state.pages = [
+      [],
+      [job({ status: "running", progress: 0.5, message: "正在识别" })],
+      [job({ status: "succeeded" })]
+    ];
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"], shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderLibrary();
+    await ready();
+
+    await submitUrl(user);
+    await user.click(await screen.findByRole("button", { name: "放到后台" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await act(() => vi.advanceTimersByTimeAsync(ACTIVE_POLL_MS));
+    expect(await screen.findByText("「Everyday Talk」处理完成")).toBeInTheDocument();
+    await act(() => vi.advanceTimersByTimeAsync(10 * ACTIVE_POLL_MS));
+    expect(screen.getAllByText("「Everyday Talk」处理完成")).toHaveLength(1);
+  });
+});

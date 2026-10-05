@@ -1,0 +1,39 @@
+.jobTitle {
+  margin: -8px 0 16px;
+  overflow: hidden;
+  color: var(--chalk-dim);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage {
+  margin: 12px 0 0;
+  color: var(--lamp);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.stage[data-status="failed"] {
+  color: var(--danger-soft);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.stage[data-status="succeeded"] {
+  color: var(--signal);
+}
+
+.note {
+  margin: 10px 0 0;
+  color: var(--chalk-faint);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
