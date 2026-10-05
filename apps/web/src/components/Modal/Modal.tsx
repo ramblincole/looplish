@@ -75,7 +75,15 @@ function ModalSurface({ onClose, title, returnFocusTo, children }: ModalProps) {
 
   // 挂到 body：不受练习台吸顶区域等父级层叠上下文影响。
   return createPortal(
-    <div className={styles.backdrop}>
+    <div
+      className={styles.backdrop}
+      onMouseDown={(event) => {
+        // 按下空白区域背景不应抢走对话框的焦点；规范中没有点击关闭。
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+        }
+      }}
+    >
       <div
         ref={dialogRef}
         className={styles.card}

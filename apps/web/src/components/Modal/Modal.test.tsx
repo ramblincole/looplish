@@ -87,4 +87,20 @@ describe("Modal", () => {
     expect(trigger).toHaveFocus();
     expect(screen.getByTestId("probe")).toHaveTextContent("closed");
   });
+
+  it("keeps focus in dialog when backdrop is clicked, and Escape still closes", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    await user.click(screen.getByRole("button", { name: "打开设置" }));
+
+    const dialog = screen.getByRole("dialog");
+    const backdrop = dialog.parentElement;
+    await user.click(backdrop!);
+
+    expect(screen.getByLabelText("第一项")).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
