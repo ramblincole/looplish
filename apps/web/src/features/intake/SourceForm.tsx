@@ -21,13 +21,17 @@ export function SourceForm({ options, disabled, allowLocalPaths, onCreated }: Pr
   const [hint, setHint] = useState<string | null>(null);
   const create = useCreateJob();
 
-  // 粘贴整段分享文案时直接换成其中的链接，让用户提交前就能看到实际要下载的地址。
+  // 粘贴整段分享文案时只插入其中的链接，让用户提交前就能看到实际要下载的地址；
+  // 和普通粘贴一样只替换选中的文字，输入框里其余内容保留。
   function paste(event: ClipboardEvent<HTMLInputElement>) {
     const text = event.clipboardData.getData("text");
     const url = extractSourceUrl(text);
     if (!url || url === text.trim()) return;
     event.preventDefault();
-    setSource(url);
+    const input = event.currentTarget;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    setSource(input.value.slice(0, start) + url + input.value.slice(end));
     setHint(null);
   }
 

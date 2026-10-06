@@ -2,16 +2,17 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from tqdm.std import tqdm
-
 from looplish_api.domain.errors import ProcessingFailure
 
 # 0~1 的下载比例。
 DownloadProgress = Callable[[float], None]
 
 
-def _download_tracker(expected: int, on_progress: DownloadProgress) -> type[tqdm]:
+def _download_tracker(expected: int, on_progress: DownloadProgress) -> type[Any]:
     """把 huggingface_hub 的进度条换成回调：不往终端输出，只汇报下载比例。"""
+    # tqdm 随 local-asr 可选依赖安装，延迟导入；只用云端识别的部署没有它也要能启动。
+    from tqdm.std import tqdm
+
     best = 0.0
 
     class Tracker(tqdm):  # type: ignore[misc]

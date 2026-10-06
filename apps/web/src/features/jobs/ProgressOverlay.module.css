@@ -20,6 +20,9 @@
 
 .steps li::before {
   margin-inline-end: 6px;
+
+  /* 不支持替代文本写法的浏览器会丢弃下一条声明，先给一条不带替代文本的回退。 */
+  content: "○";
   content: "○" / "";
 }
 
@@ -28,6 +31,7 @@
 }
 
 .steps li[data-state="done"]::before {
+  content: "✓";
   content: "✓" / "";
 }
 
@@ -36,6 +40,7 @@
 }
 
 .steps li[data-state="current"]::before {
+  content: "●";
   content: "●" / "";
 }
 

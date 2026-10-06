@@ -241,6 +241,18 @@ describe("submission", () => {
     });
   });
 
+  it("pastes the link over the selection and keeps the rest of the input", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+    const input = screen.getByLabelText<HTMLInputElement>("视频链接或本机媒体路径");
+
+    await user.type(input, "https://old.test/v");
+    input.setSelectionRange(0, input.value.length);
+    await user.paste("【新视频】 https://new.test/v");
+    expect(input).toHaveValue("https://new.test/v");
+  });
+
   it("submits only the link from typed share text", async () => {
     state.config = { ...CONFIG, allowLocalPaths: false };
     const user = userEvent.setup();

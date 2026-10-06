@@ -9,9 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-import huggingface_hub
 import pytest
-from huggingface_hub.errors import LocalEntryNotFoundError
 from openai import OpenAI
 
 from looplish_api.config import Settings
@@ -809,8 +807,20 @@ def test_local_progress_uses_whole_stage_when_model_is_cached() -> None:
 # ---------------------------------------------------------------- 模型缓存与下载进度
 
 
+@pytest.fixture
+def huggingface_hub() -> Any:
+    # huggingface_hub 随 local-asr 可选依赖安装；没装时跳过，不影响整个文件的其他用例。
+    return pytest.importorskip("huggingface_hub")
+
+
+def not_cached() -> Exception:
+    from huggingface_hub.errors import LocalEntryNotFoundError
+
+    return LocalEntryNotFoundError("not cached")
+
+
 def test_cached_model_loads_offline_without_download_progress(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, huggingface_hub: Any
 ) -> None:
     calls: list[dict[str, Any]] = []
 
@@ -829,11 +839,11 @@ def test_cached_model_loads_offline_without_download_progress(
 
 
 def test_missing_model_reports_download_progress_against_planned_size(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, huggingface_hub: Any
 ) -> None:
     def snapshot_download(repo_id: str, **kwargs: Any) -> Any:
         if kwargs.get("local_files_only"):
-            raise LocalEntryNotFoundError("not cached")
+            raise not_cached()
         if kwargs.get("dry_run"):
             return [
                 types.SimpleNamespace(file_size=10, will_download=True),
@@ -861,11 +871,11 @@ def test_missing_model_reports_download_progress_against_planned_size(
 
 
 def test_model_download_failure_maps_to_stable_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, huggingface_hub: Any
 ) -> None:
     def snapshot_download(repo_id: str, **kwargs: Any) -> str:
         if kwargs.get("local_files_only"):
-            raise LocalEntryNotFoundError("not cached")
+            raise not_cached()
         raise OSError("connection reset by https://secret.example")
 
     monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
