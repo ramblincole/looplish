@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Job } from "../../api/types";
-import { formatCreatedAt, jobMeta, progressPercent, sourceLabel, statusText } from "./jobLabels";
+import {
+  elapsedText,
+  formatCreatedAt,
+  jobMeta,
+  jobSteps,
+  progressPercent,
+  sourceLabel,
+  statusText
+} from "./jobLabels";
 
 function job(overrides: Partial<Job> = {}): Job {
   return {
@@ -47,6 +55,37 @@ describe("jobLabels", () => {
     expect(sourceLabel("http://example.test:8080/a")).toBe("example.test");
     expect(sourceLabel("C:\\data\\jobs\\X\\source\\talk.mp4")).toBe("本地文件");
     expect(sourceLabel("not a url")).toBe("本地文件");
+  });
+
+  it("marks finished, current and pending steps, skipping download for local files", () => {
+    const states = (source: string, stage: Job["stage"]) =>
+      jobSteps({ source, stage }).map((step) => `${step.label}:${step.state}`);
+
+    expect(states("https://example.test/v", "transcribing")).toEqual([
+      "下载:done",
+      "准备音频:done",
+      "转写:current",
+      "切句:pending"
+    ]);
+    expect(states("/data/jobs/X/source/talk.mp4", "preparingAudio")).toEqual([
+      "准备音频:current",
+      "转写:pending",
+      "切句:pending"
+    ]);
+    expect(states("https://example.test/v", null).every((step) => step.endsWith("pending"))).toBe(
+      true
+    );
+  });
+
+  it.each([
+    [0, "0:00"],
+    [42_900, "0:42"],
+    [725_000, "12:05"],
+    [3_725_000, "1:02:05"],
+    [-5_000, "0:00"]
+  ])("elapsedText after %s ms = %s", (ms, expected) => {
+    const start = new Date(2026, 9, 6, 15, 0).getTime();
+    expect(elapsedText(new Date(start).toISOString(), start + ms)).toBe(expected);
   });
 
   it("shows the sentence count only for finished jobs", () => {

@@ -15,7 +15,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-local-asr = ["faster-whisper>=1.2,<2"]
+local-asr = [
+  "faster-whisper>=1.2,<2",
+  # Apple 芯片上改用 GPU 识别；人声检测仍用 faster-whisper 自带的 VAD。
+  "mlx-whisper>=0.4,<1 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+]
 
 [dependency-groups]
 dev = [
@@ -54,6 +58,6 @@ plugins = ["pydantic.mypy"]
 packages = ["looplish_api"]
 
 [[tool.mypy.overrides]]
-# yt-dlp 不带类型标注；faster-whisper 是可选依赖（local-asr），未安装时同样按 Any 处理。
-module = ["yt_dlp", "yt_dlp.*", "faster_whisper", "faster_whisper.*"]
+# yt-dlp、tqdm 不带类型标注；faster-whisper、mlx-whisper 是可选依赖（local-asr），未安装时同样按 Any 处理。
+module = ["yt_dlp", "yt_dlp.*", "faster_whisper", "faster_whisper.*", "mlx_whisper", "mlx_whisper.*", "tqdm", "tqdm.*"]
 ignore_missing_imports = true

@@ -276,6 +276,11 @@ def test_progress_is_global_monotonic_and_ends_at_one(tmp_path: Path) -> None:
     assert values[0] == 0.0
     assert values[-1] == pytest.approx(1.0)
     assert h.progress[0][1] is JobStage.DOWNLOADING
+    # 下载器的细分进度按下载阶段转发，用户能看到每一步在做什么。
+    messages = [(stage, message) for _, stage, _, message in h.progress]
+    assert (JobStage.DOWNLOADING, "下载音频 50%") in messages
+    assert (JobStage.PREPARING_AUDIO, "转换播放用音频") in messages
+    assert (JobStage.TRANSCRIBING, "转换识别用音频") in messages
 
 
 def test_upload_progress_starts_without_download_stage(tmp_path: Path) -> None:

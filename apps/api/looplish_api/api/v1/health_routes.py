@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from looplish_api.api.dependencies import ContainerDep
 from looplish_api.config import Settings
+from looplish_api.infrastructure.asr.registry import mlx_available
 
 router = APIRouter(tags=["health"])
 
@@ -38,7 +39,9 @@ def _executable(command: str) -> bool:
 def _asr_ready(settings: Settings) -> bool:
     # 只检查本地依赖与配置，不访问网络、不下载模型。
     if settings.asr_backend == "local":
-        return importlib.util.find_spec("faster_whisper") is not None
+        # MLX 引擎的人声检测同样依赖 faster-whisper。
+        installed = importlib.util.find_spec("faster_whisper") is not None
+        return installed and (settings.asr_engine != "mlx" or mlx_available())
     if settings.asr_backend in {"openai", "groq"}:
         key = settings.asr_api_key
         return key is not None and bool(key.get_secret_value().strip())

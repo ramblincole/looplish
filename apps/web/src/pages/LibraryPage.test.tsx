@@ -1,5 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -212,6 +220,38 @@ describe("submission", () => {
       tailPad: 0.4
     });
     expect(screen.getByLabelText("视频链接或本机媒体路径")).toHaveValue("");
+  });
+
+  it("keeps only the link when pasting a share text", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+    const input = screen.getByLabelText("视频链接或本机媒体路径");
+
+    await user.click(input);
+    await user.paste(
+      "【【全英vlog】跟着博主学口语 |“如何享受独处？”】 https://www.bilibili.com/video/BV1EqVJ6dE6R/?share_source=copy_web"
+    );
+    expect(input).toHaveValue("https://www.bilibili.com/video/BV1EqVJ6dE6R/?share_source=copy_web");
+
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
+    await waitFor(() => expect(state.requests.created).toHaveLength(1));
+    expect(state.requests.created[0]).toMatchObject({
+      source: "https://www.bilibili.com/video/BV1EqVJ6dE6R/?share_source=copy_web"
+    });
+  });
+
+  it("submits only the link from typed share text", async () => {
+    state.config = { ...CONFIG, allowLocalPaths: false };
+    const user = userEvent.setup();
+    renderLibrary();
+    await ready();
+
+    await user.type(screen.getByLabelText("视频链接"), "看这个：https://youtu.be/abc。");
+    await user.click(screen.getByRole("button", { name: "开始切分" }));
+
+    await waitFor(() => expect(state.requests.created).toHaveLength(1));
+    expect(state.requests.created[0]).toMatchObject({ source: "https://youtu.be/abc" });
   });
 
   it("uploads a file only after the explicit button, as multipart strings", async () => {
@@ -689,7 +729,15 @@ describe("progress overlay", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "正在处理" });
     expect(dialog).toHaveTextContent("Everyday Talk");
-    expect(await screen.findByText("处理中·转写 · 正在识别")).toBeInTheDocument();
+    expect(await within(dialog).findByText("正在识别")).toBeInTheDocument();
+    const steps = within(dialog).getByRole("list", { name: "处理步骤" });
+    expect(
+      within(steps)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent)
+    ).toEqual(["下载（已完成）", "准备音频（已完成）", "转写", "切句"]);
+    expect(within(steps).getByText("转写")).toHaveAttribute("aria-current", "step");
+    expect(dialog).toHaveTextContent(/已用时 \d+:\d{2}/);
     expect(screen.getByRole("progressbar", { name: "处理进度" })).toHaveAttribute(
       "aria-valuenow",
       "40"

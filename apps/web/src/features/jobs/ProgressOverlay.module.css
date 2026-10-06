@@ -7,6 +7,38 @@
   white-space: nowrap;
 }
 
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 14px 0 0;
+  padding: 0;
+  color: var(--chalk-faint);
+  font-size: 12.5px;
+  list-style: none;
+}
+
+.steps li::before {
+  margin-inline-end: 6px;
+  content: "○" / "";
+}
+
+.steps li[data-state="done"] {
+  color: var(--signal);
+}
+
+.steps li[data-state="done"]::before {
+  content: "✓" / "";
+}
+
+.steps li[data-state="current"] {
+  color: var(--lamp);
+}
+
+.steps li[data-state="current"]::before {
+  content: "●" / "";
+}
+
 .stage {
   margin: 12px 0 0;
   color: var(--lamp);

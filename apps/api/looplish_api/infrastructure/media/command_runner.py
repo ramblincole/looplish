@@ -25,6 +25,13 @@ class CommandRunner:
     ) -> subprocess.CompletedProcess[str]:
         try:
             process = self._spawn(args, cwd)
+        except FileNotFoundError as error:
+            # 最常见的是本机没装 FFmpeg；只报工具名，提示用户怎么修，不暴露配置的完整路径。
+            tool = Path(args[0]).name
+            raise ProcessingFailure(
+                "MEDIA_PROCESSING_FAILED",
+                f"找不到媒体工具 {tool}，请先安装 FFmpeg 并重启服务。",
+            ) from error
         except OSError as error:
             # 工具不存在或无权执行时同样给出稳定错误码，不暴露本机路径。
             raise ProcessingFailure("MEDIA_PROCESSING_FAILED", "媒体工具无法启动。") from error

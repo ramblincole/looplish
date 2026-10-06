@@ -1,10 +1,10 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import type { Job } from "../../api/types";
 import { Button } from "../../components/Button/Button";
 import { Modal } from "../../components/Modal/Modal";
 import { ProgressBar } from "../../components/ProgressBar/ProgressBar";
-import { statusText } from "./jobLabels";
+import { elapsedText, jobSteps } from "./jobLabels";
 import styles from "./ProgressOverlay.module.css";
 import { isActive } from "./useJobs";
 
@@ -22,10 +22,23 @@ function titleOf(job: Job): string {
   return "正在处理";
 }
 
+/** 每秒刷新一次已用时；某一步耗时较长时，跳动的计时让用户知道任务没有卡住。 */
+function useNow(running: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+  return now;
+}
+
 export function ProgressOverlay({ job, onClose, returnFocusTo }: Props) {
   const navigate = useNavigate();
   const primary = useRef<HTMLButtonElement>(null);
   const status = job?.status;
+  const now = useNow(status === "queued" || status === "running");
 
   useEffect(() => {
     // 进入终态时原来的「放到后台」按钮消失，把焦点交给新的主操作，键盘用户不会落到 body。
@@ -38,16 +51,37 @@ export function ProgressOverlay({ job, onClose, returnFocusTo }: Props) {
   return (
     <Modal open onClose={onClose} title={titleOf(job)} returnFocusTo={returnFocusTo}>
       <p className={styles.jobTitle}>{job.title}</p>
-      {active ? <ProgressBar value={job.progress} label="处理进度" /> : null}
+      {active ? (
+        <>
+          <ProgressBar value={job.progress} label="处理进度" />
+          <ol className={styles.steps} aria-label="处理步骤">
+            {jobSteps(job).map((step) => (
+              <li
+                key={step.stage}
+                data-state={step.state}
+                aria-current={step.state === "current" ? "step" : undefined}
+              >
+                {step.label}
+                {/* 图标只是装饰，读屏从这里得知已完成的步骤。 */}
+                {step.state === "done" ? <span className="visuallyHidden">（已完成）</span> : null}
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : null}
       {/* 状态变化由这里播报；标题变化不会被读屏可靠地朗读。 */}
       <p className={styles.stage} data-status={job.status} aria-live="polite">
         {job.status === "failed"
           ? (job.error?.detail ?? job.message)
           : job.status === "succeeded"
             ? "可以开始练习了。"
-            : `${statusText(job)} · ${job.message}`}
+            : job.message}
       </p>
-      {active ? <p className={styles.note}>可以放到后台，任务会继续处理。</p> : null}
+      {active ? (
+        <p className={styles.note}>
+          已用时 {elapsedText(job.createdAt, now)} · 可以放到后台，任务会继续处理。
+        </p>
+      ) : null}
       <div className={styles.actions}>
         {active ? (
           <Button variant="ghost" onClick={onClose}>

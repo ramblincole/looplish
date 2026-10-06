@@ -9,15 +9,21 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import huggingface_hub
 import pytest
+from huggingface_hub.errors import LocalEntryNotFoundError
 from openai import OpenAI
 
 from looplish_api.config import Settings
 from looplish_api.domain.errors import ProcessingFailure
 from looplish_api.domain.models import JobResult, SegmentationOptions
 from looplish_api.domain.segmentation import build_sentences
+from looplish_api.infrastructure.asr import local_backend, mlx_backend, registry
 from looplish_api.infrastructure.asr.fake_backend import FakeTranscriptionBackend
 from looplish_api.infrastructure.asr.local_backend import LocalWhisperBackend
+from looplish_api.infrastructure.asr.local_progress import LocalProgress
+from looplish_api.infrastructure.asr.mlx_backend import MlxWhisperBackend, mlx_repo
+from looplish_api.infrastructure.asr.model_store import ensure_model
 from looplish_api.infrastructure.asr.openai_backend import (
     ChunkedCloudBackend,
     OpenAICompatibleBackend,
@@ -449,9 +455,20 @@ def test_local_backend_uses_exact_faster_whisper_parameters(tmp_path: Path) -> N
                 "vad_filter": True,
                 "vad_parameters": {"min_silence_duration_ms": 300},
                 "condition_on_previous_text": False,
+                "batch_size": 8,
             },
         )
     ]
+
+
+def test_local_backend_without_batching_decodes_sequentially(tmp_path: Path) -> None:
+    model = FakeWhisperModel([FakeSegment(1.0, [FakeWord(0.1, 0.5, " Hi.", 0.95)])])
+
+    LocalWhisperBackend("small.en", tmp_path, batch_size=1, model=model).transcribe(
+        tmp_path / "in.wav", "en", None
+    )
+
+    assert "batch_size" not in model.calls[0][1]
 
 
 def test_local_backend_maps_words_progress_and_detected_language(tmp_path: Path) -> None:
@@ -474,7 +491,11 @@ def test_local_backend_maps_words_progress_and_detected_language(tmp_path: Path)
     assert transcript.language == "en"
     assert transcript.duration == 4.0
     assert transcript.source == "asr:local:small.en"
-    assert progress == [(0.5, "本地识别"), (1.0, "本地识别")]
+    assert progress == [
+        (0.0, "检测人声片段"),
+        (0.5, "识别语音 0:02 / 0:04"),
+        (1.0, "识别语音 0:04 / 0:04"),
+    ]
 
 
 def test_local_backend_without_words_fails(tmp_path: Path) -> None:
@@ -519,9 +540,22 @@ def test_model_is_loaded_lazily_once_with_configured_options(
             super().__init__([FakeSegment(1.0, [FakeWord(0.1, 0.5, " ok", 0.9)])])
 
     monkeypatch.setitem(
-        sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=WhisperModel)
+        sys.modules,
+        "faster_whisper",
+        types.SimpleNamespace(
+            WhisperModel=WhisperModel,
+            BatchedInferencePipeline=lambda model: model,
+            utils=types.SimpleNamespace(_MODELS={"small.en": "Systran/faster-whisper-small.en"}),
+        ),
     )
-    backend = LocalWhisperBackend("small.en", tmp_path / "models", "cpu", "int8")
+    fetched: list[tuple[str, Path]] = []
+
+    def ensure_model(repo_id: str, models_dir: Path, *args: Any) -> Path:
+        fetched.append((repo_id, models_dir))
+        return tmp_path / "snapshot"
+
+    monkeypatch.setattr(local_backend, "ensure_model", ensure_model)
+    backend = LocalWhisperBackend("small.en", tmp_path / "models", "cpu", "int8", cpu_threads=6)
     assert created == []
 
     threads = [
@@ -533,10 +567,11 @@ def test_model_is_loaded_lazily_once_with_configured_options(
     for thread in threads:
         thread.join()
 
+    assert fetched == [("Systran/faster-whisper-small.en", tmp_path / "models")]
     assert created == [
         (
-            "small.en",
-            {"device": "cpu", "compute_type": "int8", "download_root": str(tmp_path / "models")},
+            str(tmp_path / "snapshot"),
+            {"device": "cpu", "compute_type": "int8", "cpu_threads": 6},
         )
     ]
 
@@ -583,12 +618,15 @@ def test_registry_builds_fake_and_local(tmp_path: Path) -> None:
             asr_backend="local",
             asr_model="base.en",
             asr_device="cpu",
+            asr_engine="faster-whisper",
+            asr_cpu_threads=6,
             models_dir=tmp_path / "models",
         ),
         media,
     )
     assert isinstance(local, LocalWhisperBackend)
     assert (local.model_name, local.device, local.compute_type) == ("base.en", "cpu", "int8")
+    assert (local.cpu_threads, local.batch_size) == (6, 8)
     assert local.models_dir == tmp_path / "models"
     # 构造时不加载模型、不导入 faster-whisper。
     assert local._model is None
@@ -679,3 +717,255 @@ def test_key_never_reaches_transcript_or_persisted_result(tmp_path: Path) -> Non
     assert SECRET not in repr(transcript)
     assert SECRET not in transcript.source
     assert SECRET not in json.dumps(job_result_to_dict(result), ensure_ascii=False)
+
+
+@pytest.mark.parametrize(
+    ("engine", "model", "has_mlx", "expected"),
+    [
+        ("auto", "small.en", True, MlxWhisperBackend),
+        ("auto", "small.en", False, LocalWhisperBackend),
+        # 没有 MLX 权重的模型在 auto 下退回 faster-whisper。
+        ("auto", "distil-small.en", True, LocalWhisperBackend),
+        ("faster-whisper", "small.en", True, LocalWhisperBackend),
+        ("mlx", "large-v3-turbo", False, MlxWhisperBackend),
+    ],
+)
+def test_registry_picks_local_engine(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    engine: str,
+    model: str,
+    has_mlx: bool,
+    expected: type,
+) -> None:
+    monkeypatch.setattr(registry, "mlx_available", lambda: has_mlx)
+
+    backend = build_backend(
+        settings(tmp_path, asr_backend="local", asr_engine=engine, asr_model=model),
+        FakeMediaProcessor(),
+    )
+
+    assert isinstance(backend, expected)
+    assert backend.name == "local"
+
+
+def test_registry_rejects_mlx_engine_without_mlx_weights(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="MLX"):
+        build_backend(
+            settings(tmp_path, asr_engine="mlx", asr_model="distil-small.en"),
+            FakeMediaProcessor(),
+        )
+
+
+def test_unknown_local_engine_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="engine"):
+        settings(tmp_path, asr_engine="coreml")
+
+
+def test_default_cpu_threads_stay_in_a_sane_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    for cores, expected in [(None, 4), (2, 4), (8, 5), (15, 10), (64, 12)]:
+        monkeypatch.setattr(registry.os, "process_cpu_count", lambda cores=cores: cores)
+        assert registry.default_cpu_threads() == expected
+
+
+def test_mlx_repo_maps_faster_whisper_names() -> None:
+    assert mlx_repo("small.en") == "mlx-community/whisper-small.en-mlx"
+    assert mlx_repo("turbo") == "mlx-community/whisper-large-v3-turbo"
+    assert mlx_repo("mlx-community/whisper-tiny") == "mlx-community/whisper-tiny"
+    assert mlx_repo("distil-small.en") is None
+
+
+# ---------------------------------------------------------------- 本地识别进度
+
+
+def test_local_progress_reserves_room_for_first_model_download() -> None:
+    events: list[tuple[float, str]] = []
+    report = LocalProgress(lambda value, text: events.append((value, text)))
+
+    report.model_download(0.5)
+    report.model_loading()
+    report.recognized(30, 60)
+    report.recognized(3725, 3725)
+
+    assert events == [
+        (0.15, "首次使用，下载识别模型 50%"),
+        (0.3, "加载识别模型"),
+        (pytest.approx(0.65), "识别语音 0:30 / 1:00"),
+        (1.0, "识别语音 1:02:05 / 1:02:05"),
+    ]
+
+
+def test_local_progress_uses_whole_stage_when_model_is_cached() -> None:
+    events: list[tuple[float, str]] = []
+    report = LocalProgress(lambda value, text: events.append((value, text)))
+
+    report.model_loading()
+    report.recognized(15, 60)
+    report.recognized(1, 0)
+
+    assert events == [(0.0, "加载识别模型"), (0.25, "识别语音 0:15 / 1:00")]
+
+
+# ---------------------------------------------------------------- 模型缓存与下载进度
+
+
+def test_cached_model_loads_offline_without_download_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def snapshot_download(repo_id: str, **kwargs: Any) -> str:
+        calls.append(kwargs)
+        return str(tmp_path / "snapshot")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    progress: list[float] = []
+
+    path = ensure_model("org/model", tmp_path, progress.append, ["config.json"])
+
+    assert path == tmp_path / "snapshot"
+    assert [call["local_files_only"] for call in calls] == [True]
+    assert progress == []
+
+
+def test_missing_model_reports_download_progress_against_planned_size(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def snapshot_download(repo_id: str, **kwargs: Any) -> Any:
+        if kwargs.get("local_files_only"):
+            raise LocalEntryNotFoundError("not cached")
+        if kwargs.get("dry_run"):
+            return [
+                types.SimpleNamespace(file_size=10, will_download=True),
+                types.SimpleNamespace(file_size=390, will_download=True),
+                types.SimpleNamespace(file_size=9999, will_download=False),
+            ]
+        tracker = kwargs["tqdm_class"]
+        files = tracker(total=2, desc="Fetching 2 files")
+        files.update(1)
+        # 小文件先下完：此时进度条自己的总量只有 10 字节，不能因此报 100%。
+        network = tracker(total=10, unit="B", desc="Downloading bytes")
+        network.update(10)
+        disk = tracker(total=400, unit="B", desc="Reconstructing (incomplete total...)")
+        network.update(190)
+        disk.update(100)
+        disk.update(300)
+        return str(tmp_path / "snapshot")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    progress: list[float] = []
+
+    ensure_model("org/model", tmp_path, progress.append)
+
+    assert progress == [0.0, 0.025, 0.5, 0.5, 1.0]
+
+
+def test_model_download_failure_maps_to_stable_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def snapshot_download(repo_id: str, **kwargs: Any) -> str:
+        if kwargs.get("local_files_only"):
+            raise LocalEntryNotFoundError("not cached")
+        raise OSError("connection reset by https://secret.example")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+
+    with pytest.raises(ProcessingFailure, match="模型下载失败") as exc:
+        ensure_model("org/model", tmp_path, lambda value: None)
+
+    assert "secret" not in str(exc.value)
+
+
+# ---------------------------------------------------------------- MLX 后端
+
+
+def fake_mlx(monkeypatch: pytest.MonkeyPatch, transcribe: Any) -> types.ModuleType:
+    transcribe_module = types.ModuleType("mlx_whisper.transcribe")
+    transcribe_module.tqdm = "original"  # type: ignore[attr-defined]
+    package = types.ModuleType("mlx_whisper")
+    package.transcribe = lambda *a, **k: transcribe(transcribe_module, *a, **k)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "mlx_whisper", package)
+    monkeypatch.setitem(sys.modules, "mlx_whisper.transcribe", transcribe_module)
+    return transcribe_module
+
+
+def test_mlx_backend_maps_speech_only_timestamps_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("faster_whisper")
+    import faster_whisper.audio
+    import faster_whisper.vad
+    import numpy as np
+
+    rate = mlx_backend.SAMPLE_RATE
+    # 10 秒音频，人声在 2~4 秒和 7~9 秒；中间的静音不送进模型。
+    monkeypatch.setattr(
+        faster_whisper.audio, "decode_audio", lambda *a, **k: np.zeros(10 * rate, np.float32)
+    )
+    monkeypatch.setattr(
+        faster_whisper.vad,
+        "get_speech_timestamps",
+        lambda *a, **k: [
+            {"start": 2 * rate, "end": 4 * rate},
+            {"start": 7 * rate, "end": 9 * rate},
+        ],
+    )
+    calls: list[dict[str, Any]] = []
+
+    def transcribe(module: Any, audio: Any, **kwargs: Any) -> dict[str, Any]:
+        calls.append({"samples": len(audio), **kwargs})
+        with module.tqdm.tqdm(total=400, unit="frames", disable=False) as bar:
+            bar.update(100)
+            bar.update(300)
+        return {
+            "language": "en",
+            "segments": [
+                {
+                    "words": [
+                        {"word": " Hello", "start": 0.5, "end": 1.5, "probability": 0.9},
+                        {"word": " there.", "start": 2.5, "end": 3.5, "probability": 0.8},
+                    ]
+                }
+            ],
+        }
+
+    transcribe_module = fake_mlx(monkeypatch, transcribe)
+    monkeypatch.setattr(mlx_backend, "ensure_model", lambda *a, **k: tmp_path / "weights")
+    progress: list[tuple[float, str]] = []
+
+    transcript = MlxWhisperBackend("small.en", "mlx-community/x", tmp_path).transcribe(
+        tmp_path / "in.wav", None, lambda value, text: progress.append((value, text))
+    )
+
+    assert calls[0]["samples"] == 4 * rate
+    assert calls[0]["path_or_hf_repo"] == str(tmp_path / "weights")
+    assert calls[0]["word_timestamps"] is True
+    assert calls[0]["verbose"] is False
+    # 送进模型的 0.5 秒是原音频第 2.5 秒；2.5 秒落在第二段人声里，对应原音频第 7.5 秒。
+    assert [(word.start, word.end) for word in transcript.words] == [(2.5, 3.5), (7.5, 8.5)]
+    assert transcript.language == "en"
+    assert transcript.duration == 10.0
+    assert transcript.source == "asr:local:small.en"
+    # 进度同样换算回原时间轴：送进模型的第 1 秒是原音频第 3 秒。
+    assert progress[-2:] == [(0.3, "识别语音 0:03 / 0:10"), (0.9, "识别语音 0:09 / 0:10")]
+    # 识别结束后恢复 mlx-whisper 自己的进度条。
+    assert transcribe_module.tqdm == "original"  # type: ignore[attr-defined]
+
+
+def test_mlx_backend_rejects_audio_without_speech(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("faster_whisper")
+    import faster_whisper.audio
+    import faster_whisper.vad
+    import numpy as np
+
+    monkeypatch.setattr(faster_whisper.audio, "decode_audio", lambda *a, **k: np.zeros(16_000))
+    monkeypatch.setattr(faster_whisper.vad, "get_speech_timestamps", lambda *a, **k: [])
+    fake_mlx(monkeypatch, lambda *a, **k: {})
+    monkeypatch.setattr(mlx_backend, "ensure_model", lambda *a, **k: tmp_path)
+
+    with pytest.raises(ProcessingFailure, match="没有识别到人声"):
+        MlxWhisperBackend("small.en", "mlx-community/x", tmp_path).transcribe(
+            tmp_path / "in.wav", "en", None
+        )

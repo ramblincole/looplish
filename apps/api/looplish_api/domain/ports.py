@@ -31,6 +31,7 @@ class MediaDownloader(Protocol):
         url: str,
         workdir: Path,
         subtitle_languages: tuple[str, ...],
+        progress: ProgressCallback | None = None,
     ) -> MediaInfo: ...
 
 

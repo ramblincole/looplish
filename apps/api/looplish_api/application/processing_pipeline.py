@@ -74,6 +74,7 @@ class ProcessingPipeline:
         )
         try:
             # 本地与云端后端消费不同编码，统一在这里准备一次性输入。
+            reporter.report(JobStage.TRANSCRIBING, 0.0, "转换识别用音频")
             if options.asr_backend == "local":
                 self.media.to_asr_wav(source, asr_source)
             else:
@@ -104,9 +105,11 @@ class ProcessingPipeline:
         thumbnail_url = None
         # URL 任务先下载；上传和本机文件的 source 已是本机路径，跳过下载器。
         if downloads:
-            reporter.report(JobStage.DOWNLOADING, 0.0, "下载媒体")
             media_info = self.downloader.download(
-                job.source, self.store.source_dir(job_id), options.subtitle_languages
+                job.source,
+                self.store.source_dir(job_id),
+                options.subtitle_languages,
+                lambda value, text: reporter.report(JobStage.DOWNLOADING, value, text),
             )
             source = media_info.path
             title = media_info.title
@@ -114,21 +117,23 @@ class ProcessingPipeline:
             uploader = media_info.uploader
             thumbnail_url = media_info.thumbnail_url
             reporter.report(JobStage.DOWNLOADING, 1.0, "下载完成")
-        reporter.report(JobStage.PREPARING_AUDIO, 0.0, "准备音频")
+        reporter.report(JobStage.PREPARING_AUDIO, 0.0, "读取媒体时长")
         duration = self.media.probe_duration(source)
+        reporter.report(JobStage.PREPARING_AUDIO, 0.2, "转换播放用音频")
         web_audio = self.media.to_web_audio(source, self.store.artifact_path(job_id, "audio.m4a"))
         reporter.report(JobStage.PREPARING_AUDIO, 1.0, "音频准备完成")
         transcript = None
         # auto/existing 先尝试人工字幕；明确选择 ASR 时完全跳过字幕查找。
         if options.subtitle_source is not SubtitleSource.ASR:
-            reporter.report(JobStage.TRANSCRIBING, 0.0, "解析字幕")
+            reporter.report(JobStage.TRANSCRIBING, 0.0, "查找现成字幕")
             transcript = self._subtitle(job_id, duration, options)
         if transcript is None and options.subtitle_source is SubtitleSource.EXISTING:
             raise ProcessingFailure("SUBTITLE_NOT_AVAILABLE", "没有可用的人工字幕。")
         if transcript is None:
-            reporter.report(JobStage.TRANSCRIBING, 0.0, "开始识别")
             transcript = self._transcribe(job_id, source, options, reporter)
-        reporter.report(JobStage.TRANSCRIBING, 1.0, "转写完成")
+            reporter.report(JobStage.TRANSCRIBING, 1.0, "语音识别完成")
+        else:
+            reporter.report(JobStage.TRANSCRIBING, 1.0, "使用现成字幕")
         reporter.report(JobStage.SEGMENTING, 0.0, "智能切句")
         # 识别用的是转码后的音频，时长可能比原媒体多几毫秒；以较长者为准，避免末尾的词被判越界。
         timeline = max(duration, transcript.duration)
@@ -152,7 +157,11 @@ class ProcessingPipeline:
             # 只在显式请求时预生成全部练习切片，否则后续可按需生成。
             for index in range(len(sentences)):
                 self.exporter.ensure_clip(result, index)
-                reporter.report(JobStage.SEGMENTING, (index + 1) / len(sentences), "生成切片")
+                reporter.report(
+                    JobStage.SEGMENTING,
+                    (index + 1) / len(sentences),
+                    f"生成单句音频 {index + 1} / {len(sentences)}",
+                )
             result = replace(result, has_clips=True)
         self.store.write_result(job_id, result)
         reporter.report(JobStage.SEGMENTING, 1.0, "处理完成")
