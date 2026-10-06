@@ -28,13 +28,13 @@ All processing happens locally. Media, subtitles and speech models are stored on
 
 ## Why Looplish
 
-Think about how children learn their first language. Long before they speak a full sentence or open a book, they spend years surrounded by it, just listening. Understanding comes first, speaking follows, and reading and writing come last. That's the natural order of learning a language.
+**Hear it first. Read it later.**
 
-Most of us learn a foreign language the other way around: vocabulary lists and textbooks first, while our ears never quite catch up. Turn off the subtitles, and sentences we "know" turn into a blur of sound.
+We learn our first language by ear, years before we learn to read. With a new language we usually start from the text, and our ears never catch up.
 
-Looplish tries to put things back in order: **understand it by ear before you read it.** It breaks real video or audio into single sentences so you can hide the text and listen to one sentence again and again until you can make out every word, then reveal the text to check. Slow it down, loop it a few more times, leave yourself room to shadow it, and train your ear one sentence at a time.
+Looplish puts listening first again: hide the text, loop each sentence until you can hear every word, then look.
 
-
+## Screenshots
 
 <p align="center">
   <img src="docs/assets/screenshot-practice.png" alt="Practice view: per-sentence playback, looping, speed control and the sentence list" width="900" />
