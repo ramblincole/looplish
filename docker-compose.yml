@@ -1,0 +1,29 @@
+# 一键启动：docker compose up -d，然后打开 http://127.0.0.1:8756
+services:
+  looplish:
+    build: .
+    image: looplish:latest
+    restart: unless-stopped
+    # 只绑定宿主机回环地址，局域网里的其他设备访问不到；需要对外开放时再改成 "8756:8756"。
+    ports:
+      - "127.0.0.1:8756:8756"
+    # 可选：识别模型、云端识别密钥等设置写在 .env 里（参考 .env.example）。
+    # 路径、监听地址由下面的 environment 固定，.env 中的同名项不会生效。
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LOOPLISH_HOST: 0.0.0.0
+      LOOPLISH_PORT: 8756
+      LOOPLISH_WEB_DIST_DIR: /app/web
+      LOOPLISH_DATA_DIR: /data/jobs
+      LOOPLISH_MODELS_DIR: /data/models
+      LOOPLISH_LOG_DIR: /data/logs
+      LOOPLISH_FFMPEG_PATH: ffmpeg
+      LOOPLISH_FFPROBE_PATH: ffprobe
+    # 素材、字幕和下载的 Whisper 模型都存在这个卷里，删除容器不会丢失。
+    volumes:
+      - looplish-data:/data
+
+volumes:
+  looplish-data:
