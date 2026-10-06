@@ -34,18 +34,12 @@ We learn our first language by ear, years before we learn to read. With a new la
 
 Looplish puts listening first again: hide the text, loop each sentence until you can hear every word, then look.
 
-## Screenshots
+## Demo
 
 <p align="center">
-  <img src="docs/assets/screenshot-practice.png" alt="Practice view: per-sentence playback, looping, speed control and the sentence list" width="900" />
+  <img src="docs/assets/demo.gif" alt="Demo: upload audio, split it into sentences, then listen blind sentence by sentence with looping, slower playback and reveal" width="900" />
   <br />
-  <sub>Practice view: the current sentence, transport controls, loop / speed / shadowing gap, and a searchable sentence list</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/screenshot-library.png" alt="Library: paste a link, upload a file and manage processed media" width="900" />
-  <br />
-  <sub>Library: paste a link or drop in a file to start processing; processed media is listed below</sub>
+  <sub>Upload audio and it is split into sentences; in the practice view, listen with the text hidden, loop and slow down, then reveal the sentence</sub>
 </p>
 
 ## Features

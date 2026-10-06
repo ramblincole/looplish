@@ -35,15 +35,9 @@ Looplish 把顺序换回来：遮住原文，一句一句反复听，听清了�
 ## 界面预览
 
 <p align="center">
-  <img src="docs/assets/screenshot-practice.png" alt="练习台：逐句播放、循环、调速与句子清单" width="900" />
+  <img src="docs/assets/demo.gif" alt="演示：上传音频、自动切句，再在练习台逐句盲听、循环、调速并显示原文" width="900" />
   <br />
-  <sub>练习台：当前句、播放控制、循环 / 语速 / 跟读间隔，右侧是可搜索的句子清单</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/screenshot-library.png" alt="素材库：粘贴链接、上传文件并管理已处理的素材" width="900" />
-  <br />
-  <sub>素材库：粘贴链接或拖入文件开始处理，下方是已处理的素材</sub>
+  <sub>上传音频后自动切句；练习台里遮住原文逐句盲听，可以循环、减速，听完再显示原文</sub>
 </p>
 
 ## 功能特性
