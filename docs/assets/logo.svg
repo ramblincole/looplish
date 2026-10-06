@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title">
+  <title id="title">Looplish</title>
+  <!-- 机箱底色 + 细边框，取自 apps/web/src/styles/tokens.css -->
+  <rect x="4" y="4" width="248" height="248" rx="56" fill="#0E1419"/>
+  <rect x="4" y="4" width="248" height="248" rx="56" fill="none" stroke="#26313B" stroke-width="4"/>
+  <!-- 循环环：琥珀读数灯色，右上方留缺口并以箭头收尾，表示「逐句循环」 -->
+  <path d="M 197.28 88 A 80 80 0 1 1 138.5 48.7" fill="none" stroke="#F0A22E" stroke-width="18" stroke-linecap="round"/>
+  <path d="M 167.4 52.4 L 141.6 30.6 L 135.4 66.0 Z" fill="#F0A22E" stroke="#F0A22E" stroke-width="6" stroke-linejoin="round"/>
+  <!-- 声波：中间一格高亮，表示正在听的这一句 -->
+  <g stroke-linecap="round" stroke-width="13">
+    <line x1="86" y1="116" x2="86" y2="140" stroke="#8494A1"/>
+    <line x1="107" y1="98" x2="107" y2="158" stroke="#E6EDF3"/>
+    <line x1="128" y1="86" x2="128" y2="170" stroke="#F0A22E"/>
+    <line x1="149" y1="104" x2="149" y2="152" stroke="#E6EDF3"/>
+    <line x1="170" y1="118" x2="170" y2="138" stroke="#8494A1"/>
+  </g>
+</svg>
