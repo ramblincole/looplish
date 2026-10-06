@@ -28,6 +28,32 @@ export function statusText(job: Pick<Job, "status" | "stage">): string {
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
+type Stage = NonNullable<Job["stage"]>;
+const STAGE_ORDER: Stage[] = ["downloading", "preparingAudio", "transcribing", "segmenting"];
+
+export type JobStep = { stage: Stage; label: string; state: "done" | "current" | "pending" };
+
+/** 处理步骤清单；上传和本机文件没有下载这一步，排队时所有步骤都还没开始。 */
+export function jobSteps(job: Pick<Job, "source" | "stage">): JobStep[] {
+  const downloads = /^https?:\/\//i.test(job.source);
+  const stages = STAGE_ORDER.filter((stage) => downloads || stage !== "downloading");
+  const current = job.stage ? stages.indexOf(job.stage) : -1;
+  return stages.map((stage, index) => ({
+    stage,
+    label: STAGE_LABELS[stage],
+    state: current < 0 || index > current ? "pending" : index === current ? "current" : "done"
+  }));
+}
+
+/** 从创建到现在的时长，如 0:42、12:05、1:02:05；时钟偏差导致的负数按 0 处理。 */
+export function elapsedText(createdAt: string, now: number): string {
+  const total = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = pad(total % 60);
+  return hours ? `${hours}:${pad(minutes)}:${seconds}` : `${minutes}:${seconds}`;
+}
+
 export function formatCreatedAt(iso: string): string {
   const date = new Date(iso);
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;

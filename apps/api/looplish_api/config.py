@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     language: str = "en"
     asr_device: str = "auto"
     asr_compute_type: str = "int8"
+    # 本地识别引擎：auto 在 Apple 芯片且装了 mlx-whisper 时用 GPU（mlx），否则用 faster-whisper。
+    asr_engine: str = "auto"
+    # faster-whisper 的 CPU 线程数，0 表示按本机核心数自动选择；批量大小 1 表示逐段解码。
+    asr_cpu_threads: int = Field(default=0, ge=0, le=64)
+    asr_batch_size: int = Field(default=8, ge=1, le=64)
     asr_api_key: SecretStr | None = Field(default=None, repr=False)
     asr_base_url: str | None = None
     asr_api_model: str | None = None
@@ -81,6 +86,8 @@ class Settings(BaseSettings):
         # 启动时一次性验证后端和派生切句参数，避免任务运行到中途才失败。
         if self.asr_backend not in {"local", "openai", "groq", "fake"}:
             raise ValueError(f"unknown ASR backend: {self.asr_backend}")
+        if self.asr_engine not in {"auto", "faster-whisper", "mlx"}:
+            raise ValueError(f"unknown local ASR engine: {self.asr_engine}")
         has_key = self.asr_api_key is not None and self.asr_api_key.get_secret_value().strip()
         if self.asr_backend in {"openai", "groq"} and not has_key:
             raise ValueError("cloud ASR backend requires an API key")

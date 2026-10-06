@@ -66,8 +66,17 @@ class FakeDownloader:
         self.calls = calls
         self.subtitles = subtitles or {}
 
-    def download(self, url: str, workdir: Path, subtitle_languages: tuple[str, ...]) -> MediaInfo:
+    def download(
+        self,
+        url: str,
+        workdir: Path,
+        subtitle_languages: tuple[str, ...],
+        progress: ProgressCallback | None = None,
+    ) -> MediaInfo:
         self.calls.log.append("download")
+        if progress is not None:
+            progress(0.0, "解析视频信息")
+            progress(0.5, "下载音频 50%")
         path = workdir / "source.webm"
         path.write_bytes(b"media")
         paths = []

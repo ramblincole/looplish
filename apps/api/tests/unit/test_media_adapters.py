@@ -174,9 +174,22 @@ def test_run_maps_nonzero_exit_without_leaking_stderr() -> None:
     assert "abc123" not in str(exc.value)
 
 
-def test_missing_executable_maps_to_stable_error(tmp_path: Path) -> None:
+def test_missing_executable_names_the_tool_without_leaking_path(tmp_path: Path) -> None:
+    with pytest.raises(ProcessingFailure, match="找不到媒体工具 ffprobe") as exc:
+        CommandRunner().run([str(tmp_path / "ffprobe")], timeout=5)
+
+    assert exc.value.code == "MEDIA_PROCESSING_FAILED"
+    assert "FFmpeg" in exc.value.detail
+    assert str(tmp_path) not in str(exc.value)
+
+
+def test_unexecutable_tool_maps_to_stable_error(tmp_path: Path) -> None:
+    tool = tmp_path / "ffmpeg"
+    tool.write_text("")
+    tool.chmod(0o644)
+
     with pytest.raises(ProcessingFailure, match="无法启动") as exc:
-        CommandRunner().run([str(tmp_path / "no-such-tool")], timeout=5)
+        CommandRunner().run([str(tool)], timeout=5)
 
     assert str(tmp_path) not in str(exc.value)
 
@@ -669,3 +682,36 @@ def test_real_ffmpeg_failure_maps_to_stable_error(tmp_path: Path) -> None:
 
     assert exc.value.code == "MEDIA_PROCESSING_FAILED"
     assert str(tmp_path) not in str(exc.value)
+
+
+def test_download_progress_reports_media_bytes_but_skips_subtitles() -> None:
+    events: list[tuple[float, str]] = []
+    hook = ytdlp_downloader.progress_hook(lambda value, text: events.append((value, text)))
+
+    hook({"status": "downloading", "filename": "/w/source.en.vtt", "downloaded_bytes": 9})
+    hook(
+        {
+            "status": "downloading",
+            "filename": "/w/source.m4a.part",
+            "downloaded_bytes": 6_200_000,
+            "total_bytes": 13_800_000,
+        }
+    )
+    hook({"status": "downloading", "filename": "/w/source.m4a", "downloaded_bytes": 1_000_000})
+    hook({"status": "finished", "filename": "/w/source.m4a"})
+
+    assert events == [
+        (pytest.approx(0.449, abs=1e-3), "下载音频 45% · 6.2 / 13.8 MB"),
+        (0.0, "下载音频 · 已下载 1.0 MB"),
+    ]
+
+
+def test_downloader_forwards_progress_hook(tmp_path: Path, fake_ydl: type[FakeYoutubeDL]) -> None:
+    events: list[str] = []
+
+    YtDlpDownloader(1000).download(
+        "https://example.test/watch?v=1", tmp_path, (), lambda _, text: events.append(text)
+    )
+
+    assert events == ["解析视频信息"]
+    assert len(fake_ydl.instances[0].options["progress_hooks"]) == 1

@@ -1,5 +1,6 @@
 import ipaddress
 import socket
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -10,6 +11,7 @@ from yt_dlp.networking.exceptions import RequestError
 
 from looplish_api.domain.errors import ProcessingFailure, SourceNotSupported
 from looplish_api.domain.models import MediaInfo
+from looplish_api.domain.ports import ProgressCallback
 
 # 只保留已加装重定向校验的 urllib 后端；其他网络库会绕开下面的校验。
 ALLOWED_REQUEST_HANDLERS = frozenset({"Urllib"})
@@ -83,11 +85,45 @@ class SafeYoutubeDL(YoutubeDL):  # type: ignore[misc]
         return super().urlopen(request)
 
 
+SUBTITLE_SUFFIXES = (".vtt", ".srt")
+
+
+def _megabytes(size: float) -> str:
+    return f"{size / 1_000_000:.1f}"
+
+
+def progress_hook(progress: ProgressCallback) -> Callable[[dict[str, Any]], None]:
+    """把 yt-dlp 的下载回调转成「下载音频 45% · 6.2 / 13.8 MB」。"""
+
+    def hook(status: dict[str, Any]) -> None:
+        # 字幕文件很小且先于媒体下载，计入会让进度先到 100% 再回落。
+        filename = str(status.get("filename") or "").removesuffix(".part")
+        if status.get("status") != "downloading" or filename.endswith(SUBTITLE_SUFFIXES):
+            return
+        done = float(status.get("downloaded_bytes") or 0)
+        total = float(status.get("total_bytes") or status.get("total_bytes_estimate") or 0)
+        if total <= 0:
+            progress(0.0, f"下载音频 · 已下载 {_megabytes(done)} MB")
+            return
+        ratio = min(1.0, done / total)
+        progress(
+            ratio,
+            f"下载音频 {round(ratio * 100)}% · {_megabytes(done)} / {_megabytes(total)} MB",
+        )
+
+    return hook
+
+
 class YtDlpDownloader:
     def __init__(self, max_download_bytes: int) -> None:
         self.max_download_bytes = max_download_bytes
 
-    def options(self, workdir: Path, subtitle_languages: tuple[str, ...]) -> dict[str, Any]:
+    def options(
+        self,
+        workdir: Path,
+        subtitle_languages: tuple[str, ...],
+        progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
         return {
             "format": "bestaudio/best",
             "noplaylist": True,
@@ -103,14 +139,24 @@ class YtDlpDownloader:
             "external_downloader": {"default": "native"},
             "quiet": True,
             "no_warnings": True,
+            "progress_hooks": [progress_hook(progress)] if progress is not None else [],
         }
 
-    def download(self, url: str, workdir: Path, subtitle_languages: tuple[str, ...]) -> MediaInfo:
+    def download(
+        self,
+        url: str,
+        workdir: Path,
+        subtitle_languages: tuple[str, ...],
+        progress: ProgressCallback | None = None,
+    ) -> MediaInfo:
         validate_public_http_url(url)
         workdir.mkdir(parents=True, exist_ok=True)
         root = workdir.resolve()
+        if progress is not None:
+            # 解析页面、挑选音轨要几秒，此时还没有字节进度。
+            progress(0.0, "解析视频信息")
         try:
-            with SafeYoutubeDL(self.options(workdir, subtitle_languages)) as client:
+            with SafeYoutubeDL(self.options(workdir, subtitle_languages, progress)) as client:
                 info = client.extract_info(url, download=True)
                 downloads = info.get("requested_downloads") or []
                 filepath = downloads[0].get("filepath") if downloads else None
