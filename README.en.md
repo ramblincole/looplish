@@ -34,18 +34,12 @@ We learn our first language by ear, years before we learn to read. With a new la
 
 Looplish puts listening first again: hide the text, loop each sentence until you can hear every word, then look.
 
-## Screenshots
+## Demo
 
 <p align="center">
-  <img src="docs/assets/screenshot-practice.png" alt="Practice view: per-sentence playback, looping, speed control and the sentence list" width="900" />
+  <img src="docs/assets/demo.gif" alt="Demo: upload audio, split it into sentences, then listen blind sentence by sentence with looping, slower playback and reveal" width="900" />
   <br />
-  <sub>Practice view: the current sentence, transport controls, loop / speed / shadowing gap, and a searchable sentence list</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/screenshot-library.png" alt="Library: paste a link, upload a file and manage processed media" width="900" />
-  <br />
-  <sub>Library: paste a link or drop in a file to start processing; processed media is listed below</sub>
+  <sub>Upload audio and it is split into sentences; in the practice view, listen with the text hidden, loop and slow down, then reveal the sentence</sub>
 </p>
 
 ## Features
@@ -78,7 +72,29 @@ link / file ──► download (yt-dlp) ──► prepare audio (ffmpeg) ──�
 
 ## Getting started
 
-### Prerequisites
+### One-command start with Docker (recommended)
+
+All you need is [Docker](https://docs.docker.com/get-docker/):
+
+```bash
+git clone https://github.com/ramblincole/looplish.git
+cd looplish
+```
+
+```bash
+docker compose up -d
+```
+
+The first run builds the image, which takes a few minutes. Then open <http://127.0.0.1:8756>.
+
+- Media, subtitles and downloaded Whisper models live in the `looplish-data` Docker volume, so they survive container rebuilds.
+- To change the ASR model or language, or to use cloud ASR, run `cp .env.example .env`, edit `.env`, then run `docker compose up -d` again.
+- ASR runs on the CPU inside the container. On Apple silicon Macs, run from source (below) to get MLX GPU acceleration.
+- Local file paths are not available inside the container; upload or drag and drop local files instead.
+
+### Run from source
+
+#### Prerequisites
 
 | Dependency | Version | Notes |
 | --- | --- | --- |
@@ -88,7 +104,7 @@ link / file ──► download (yt-dlp) ──► prepare audio (ffmpeg) ──�
 | [pnpm](https://pnpm.io/) | 10 | Frontend package manager; enable with `corepack enable` |
 | [FFmpeg](https://ffmpeg.org/) | any recent | `ffmpeg` and `ffprobe` must be on `PATH`, or set their paths in the config |
 
-### 1. Clone and install
+#### 1. Clone and install
 
 ```bash
 git clone https://github.com/ramblincole/looplish.git
@@ -105,7 +121,7 @@ pnpm install
 
 > If you only plan to use cloud ASR, drop `--extra local-asr` to skip the local Whisper dependencies.
 
-### 2. Configure
+#### 2. Configure
 
 ```bash
 cp .env.example .env
@@ -113,7 +129,7 @@ cp .env.example .env
 
 The defaults use local ASR (the `small.en` model, English). The model is downloaded automatically the first time you transcribe something. See [Configuration](#configuration) for every option.
 
-### 3. Start the backend
+#### 3. Start the backend
 
 Run it from the repository root (the backend reads `.env` from the current directory):
 
@@ -121,7 +137,7 @@ Run it from the repository root (the backend reads `.env` from the current direc
 uv run --project apps/api --extra local-asr uvicorn looplish_api.main:app --host 127.0.0.1 --port 8756
 ```
 
-### 4. Start the frontend
+#### 4. Start the frontend
 
 In a second terminal:
 
@@ -131,7 +147,7 @@ pnpm --dir apps/web dev
 
 Open <http://127.0.0.1:5173>, paste a video link or pick a local file, and start processing. The dev server proxies `/api` and `/health` to `127.0.0.1:8756`.
 
-### Single-port mode (optional)
+#### Single-port mode (optional)
 
 To run a single process, build the frontend and let the backend serve it:
 

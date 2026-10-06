@@ -35,15 +35,9 @@ Looplish 把顺序换回来：遮住原文，一句一句反复听，听清了�
 ## 界面预览
 
 <p align="center">
-  <img src="docs/assets/screenshot-practice.png" alt="练习台：逐句播放、循环、调速与句子清单" width="900" />
+  <img src="docs/assets/demo.gif" alt="演示：上传音频、自动切句，再在练习台逐句盲听、循环、调速并显示原文" width="900" />
   <br />
-  <sub>练习台：当前句、播放控制、循环 / 语速 / 跟读间隔，右侧是可搜索的句子清单</sub>
-</p>
-
-<p align="center">
-  <img src="docs/assets/screenshot-library.png" alt="素材库：粘贴链接、上传文件并管理已处理的素材" width="900" />
-  <br />
-  <sub>素材库：粘贴链接或拖入文件开始处理，下方是已处理的素材</sub>
+  <sub>上传音频后自动切句；练习台里遮住原文逐句盲听，可以循环、减速，听完再显示原文</sub>
 </p>
 
 ## 功能特性
@@ -76,7 +70,29 @@ Looplish 把顺序换回来：遮住原文，一句一句反复听，听清了�
 
 ## 快速开始
 
-### 环境要求
+### 用 Docker 一键启动（推荐）
+
+只需要装好 [Docker](https://docs.docker.com/get-docker/)：
+
+```bash
+git clone https://github.com/ramblincole/looplish.git
+cd looplish
+```
+
+```bash
+docker compose up -d
+```
+
+首次运行会构建镜像，需要几分钟。完成后打开 <http://127.0.0.1:8756> 即可使用。
+
+- 素材、字幕和下载的 Whisper 模型都保存在 Docker 卷 `looplish-data` 中，重建容器不会丢失。
+- 需要修改识别模型、语言或使用云端识别时，执行 `cp .env.example .env` 后编辑 `.env`，再运行 `docker compose up -d` 生效。
+- 容器内只能用 CPU 识别。Apple 芯片的 Mac 想用 MLX 调用 GPU 加速的话，请按下面的步骤从源码运行。
+- 容器里不支持填写本机文件路径，本地文件请用上传或拖放。
+
+### 从源码运行
+
+#### 环境要求
 
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
@@ -86,7 +102,7 @@ Looplish 把顺序换回来：遮住原文，一句一句反复听，听清了�
 | [pnpm](https://pnpm.io/) | 10 | 前端包管理，可通过 `corepack enable` 启用 |
 | [FFmpeg](https://ffmpeg.org/) | 任意较新版本 | 需要 `ffmpeg` 与 `ffprobe` 在 `PATH` 中，或在配置中指定路径 |
 
-### 1. 克隆并安装依赖
+#### 1. 克隆并安装依赖
 
 ```bash
 git clone https://github.com/ramblincole/looplish.git
@@ -103,7 +119,7 @@ pnpm install
 
 > 只打算使用云端识别时，可以去掉 `--extra local-asr`，不安装本地 Whisper 相关依赖。
 
-### 2. 准备配置
+#### 2. 准备配置
 
 ```bash
 cp .env.example .env
@@ -111,7 +127,7 @@ cp .env.example .env
 
 默认配置使用本地识别（`small.en` 模型，英语）。首次识别时会自动下载模型。完整配置见下文[配置](#配置)。
 
-### 3. 启动后端
+#### 3. 启动后端
 
 在仓库根目录运行（后端会读取当前目录下的 `.env`）：
 
@@ -119,7 +135,7 @@ cp .env.example .env
 uv run --project apps/api --extra local-asr uvicorn looplish_api.main:app --host 127.0.0.1 --port 8756
 ```
 
-### 4. 启动前端
+#### 4. 启动前端
 
 另开一个终端：
 
@@ -129,7 +145,7 @@ pnpm --dir apps/web dev
 
 浏览器打开 <http://127.0.0.1:5173>，粘贴视频链接或选择本地文件，点「开始切分」即可。开发服务器会把 `/api` 与 `/health` 代理到 `127.0.0.1:8756`。
 
-### 单端口运行（可选）
+#### 单端口运行（可选）
 
 不想同时开两个进程时，可以先构建前端，再让后端直接托管页面：
 
