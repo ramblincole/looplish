@@ -196,6 +196,8 @@ LOOPLISH_WEB_DIST_DIR=apps/web/dist uv run --project apps/api --extra local-asr 
 | `LOOPLISH_LANGUAGE` | `en` | 识别语言，`auto` 表示自动检测 |
 | `LOOPLISH_ASR_ENGINE` | `auto` | 本地识别引擎：`auto` / `faster-whisper` / `mlx` |
 | `LOOPLISH_ASR_DEVICE` / `LOOPLISH_ASR_COMPUTE_TYPE` | `auto` / `int8` | faster-whisper 的设备与精度 |
+| `LOOPLISH_ASR_CPU_THREADS` | 空 | faster-whisper 的 CPU 线程数（0 – 64）；留空或 `0` 时按核心数自动选择（核心数的 2/3，限定在 4 – 12） |
+| `LOOPLISH_ASR_BATCH_SIZE` | `8` | faster-whisper 的批量识别大小（1 – 64）；设为 `1` 时不启用批量识别 |
 | `LOOPLISH_SUBTITLE_SOURCE` | `auto` | 字幕来源：`auto` / `existing` / `asr` |
 | `LOOPLISH_SUBTITLE_LANGUAGES` | `en,en-US,en-GB` | 优先使用的字幕语言 |
 | `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `14.0` | 单句最短 / 最长时长 |
