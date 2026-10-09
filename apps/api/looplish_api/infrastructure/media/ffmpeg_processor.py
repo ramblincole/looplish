@@ -1,26 +1,24 @@
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
 from looplish_api.domain.errors import ProcessingFailure
 from looplish_api.infrastructure.media.command_runner import CommandRunner
 
-WEB_AUDIO = [
-    "-vn",
-    "-ac",
-    "1",
-    "-ar",
-    "44100",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "96k",
-    "-movflags",
-    "+faststart",
-]
+# 练习页直接播放这个文件：AAC 原样拷贝不损失任何音质；其他编码转成 160k AAC 并保留立体声，
+# 人声与背景音乐的空间分离有助于听清，混成单声道会让两者叠在一起。
+WEB_AUDIO_COPY = ["-vn", "-c:a", "copy", "-movflags", "+faststart"]
+WEB_AUDIO_ENCODE = ["-ar", "44100", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart"]
 ASR_WAV = ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"]
 ASR_MP3 = ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "32k"]
-CLIP_MP3 = ["-vn", "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k"]
+CLIP_MP3 = ["-vn", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k"]
+
+
+@dataclass(frozen=True, slots=True)
+class AudioStream:
+    codec: str
+    channels: int
 
 
 class FfmpegProcessor:
@@ -62,6 +60,28 @@ class FfmpegProcessor:
             raise ProcessingFailure("MEDIA_PROCESSING_FAILED", "媒体时长超过配置上限。")
         return duration
 
+    def probe_audio(self, source: Path) -> AudioStream:
+        result = self.runner.run(
+            [
+                self.ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_name,channels",
+                "-of",
+                "json",
+                str(source),
+            ],
+            timeout=30,
+        )
+        try:
+            stream = json.loads(result.stdout)["streams"][0]
+            return AudioStream(str(stream["codec_name"]), int(stream["channels"]))
+        except (ValueError, KeyError, IndexError, TypeError) as error:
+            raise ProcessingFailure("MEDIA_PROCESSING_FAILED", "媒体中没有可用的音轨。") from error
+
     def _convert(
         self,
         source: Path,
@@ -93,7 +113,16 @@ class FfmpegProcessor:
         return ("-ss", f"{start:.3f}", "-t", f"{duration:.3f}")
 
     def to_web_audio(self, source: Path, target: Path) -> Path:
-        return self._convert(source, target, WEB_AUDIO)
+        stream = self.probe_audio(source)
+        if stream.codec == "aac":
+            try:
+                return self._convert(source, target, WEB_AUDIO_COPY)
+            except ProcessingFailure:
+                # 个别容器里的 AAC 无法直接封装进 MP4；删掉半成品后改为重新编码。
+                target.unlink(missing_ok=True)
+        # 只把多声道降到立体声；单声道和立体声保持原样。
+        downmix = ["-ac", "2"] if stream.channels > 2 else []
+        return self._convert(source, target, ["-vn", *downmix, *WEB_AUDIO_ENCODE])
 
     def to_asr_wav(self, source: Path, target: Path) -> Path:
         return self._convert(source, target, ASR_WAV)
