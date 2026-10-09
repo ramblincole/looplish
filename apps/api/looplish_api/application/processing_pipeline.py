@@ -14,7 +14,7 @@ from looplish_api.domain.ports import (
     MediaProcessor,
     TranscriptionBackend,
 )
-from looplish_api.domain.segmentation import build_sentences
+from looplish_api.domain.segmentation import build_sentences, is_punctuated
 from looplish_api.infrastructure.subtitles.parser import parse_subtitle, select_subtitle
 
 ProgressSink = Callable[[str, JobStage, float, str], None]
@@ -57,10 +57,14 @@ class ProcessingPipeline:
         if selected is None:
             return None
         try:
-            return parse_subtitle(selected, duration)
+            transcript = parse_subtitle(selected, duration)
         except ValueError:
             # 字幕为空或编码无法读取时视同没有字幕：auto 回退到识别，existing 由调用方报错。
             return None
+        # 无标点字幕只能按停顿切句；auto 模式宁可交给 ASR 识别出带标点的文本。
+        if options.subtitle_source is SubtitleSource.AUTO and not is_punctuated(transcript.words):
+            return None
+        return transcript
 
     def _transcribe(
         self, job_id: str, source: Path, options: JobOptions, reporter: ProgressReporter
