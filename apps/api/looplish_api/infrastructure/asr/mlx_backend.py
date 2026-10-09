@@ -12,6 +12,7 @@ from looplish_api.domain.ports import ProgressCallback
 from looplish_api.infrastructure.asr.local_backend import missing_dependency
 from looplish_api.infrastructure.asr.local_progress import LocalProgress
 from looplish_api.infrastructure.asr.model_store import ensure_model
+from looplish_api.infrastructure.asr.prompting import decoding_options
 from looplish_api.infrastructure.asr.timeline import RawWord, build_transcript
 
 SAMPLE_RATE = 16_000
@@ -130,8 +131,8 @@ class MlxWhisperBackend:
                         path_or_hf_repo=str(self._model_path),
                         language=language,
                         word_timestamps=True,
-                        condition_on_previous_text=False,
                         verbose=False,
+                        **decoding_options(language),
                     )
             except ProcessingFailure:
                 raise

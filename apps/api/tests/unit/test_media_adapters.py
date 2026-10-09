@@ -43,18 +43,86 @@ def probe_output(duration: str) -> str:
     return json.dumps({"format": {"duration": duration}})
 
 
+class ScriptedRunner(RecordingRunner):
+    # ffprobe 返回指定音轨；可让「直接拷贝」那次 ffmpeg 调用失败，覆盖回退路径。
+    def __init__(self, codec: str = "aac", channels: int = 2, fail_copy: bool = False) -> None:
+        super().__init__()
+        self.probe = json.dumps({"streams": [{"codec_name": codec, "channels": channels}]})
+        self.fail_copy = fail_copy
+
+    def run(
+        self, args: list[str], timeout: float, cwd: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        self.calls.append(args)
+        if args[0] == "ffprobe":
+            return CommandRunner.completed(args, stdout=self.probe)
+        if self.fail_copy and "copy" in args:
+            raise ProcessingFailure("MEDIA_PROCESSING_FAILED", "媒体处理失败。")
+        return CommandRunner.completed(args)
+
+
+AUDIO_PROBE = ["-v", "error", "-select_streams", "a:0",
+               "-show_entries", "stream=codec_name,channels", "-of", "json"]  # fmt: skip
+ENCODE_TAIL = ["-ar", "44100", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart"]
+
+
 # ---------------------------------------------------------------- FFmpeg 参数合同
 
 
-def test_web_audio_uses_exact_contract(tmp_path: Path) -> None:
-    runner = RecordingRunner()
-    processor = FfmpegProcessor("ffmpeg", "ffprobe", runner)
-    processor.to_web_audio(tmp_path / "in.mp4", tmp_path / "out.m4a")
-    assert runner.calls[0] == [
-        "ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(tmp_path / "in.mp4"),
-        "-vn", "-ac", "1", "-ar", "44100", "-c:a", "aac", "-b:a", "96k",
-        "-movflags", "+faststart", str(tmp_path / "out.m4a"),
+def test_web_audio_copies_aac_stream(tmp_path: Path) -> None:
+    runner = ScriptedRunner(codec="aac", channels=2)
+
+    FfmpegProcessor("ffmpeg", "ffprobe", runner).to_web_audio(
+        tmp_path / "in.mp4", tmp_path / "out.m4a"
+    )
+
+    assert runner.calls == [
+        ["ffprobe", *AUDIO_PROBE, str(tmp_path / "in.mp4")],
+        [
+            "ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(tmp_path / "in.mp4"),
+            "-map", "0:a:0", "-vn", "-c:a", "copy", "-movflags", "+faststart",
+            str(tmp_path / "out.m4a"),
+        ],
     ]  # fmt: skip
+
+
+def test_web_audio_reencodes_when_copy_fails(tmp_path: Path) -> None:
+    runner = ScriptedRunner(codec="aac", channels=2, fail_copy=True)
+    target = tmp_path / "out.m4a"
+    target.write_bytes(b"partial")
+
+    FfmpegProcessor("ffmpeg", "ffprobe", runner).to_web_audio(tmp_path / "in.mkv", target)
+
+    assert len(runner.calls) == 3
+    assert runner.calls[2] == [
+        "ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(tmp_path / "in.mkv"),
+        "-map", "0:a:0", "-vn", *ENCODE_TAIL, str(target),
+    ]  # fmt: skip
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(("channels", "downmix"), [(1, []), (2, []), (6, ["-ac", "2"])])
+def test_web_audio_encodes_other_codecs_keeping_stereo(
+    tmp_path: Path, channels: int, downmix: list[str]
+) -> None:
+    runner = ScriptedRunner(codec="opus", channels=channels)
+
+    FfmpegProcessor("ffmpeg", "ffprobe", runner).to_web_audio(
+        tmp_path / "in.webm", tmp_path / "out.m4a"
+    )
+
+    assert runner.calls[1] == [
+        "ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(tmp_path / "in.webm"),
+        "-map", "0:a:0", "-vn", *downmix, *ENCODE_TAIL, str(tmp_path / "out.m4a"),
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize("stdout", ['{"streams": []}', "{}", "not json"])
+def test_probe_audio_rejects_media_without_audio(tmp_path: Path, stdout: str) -> None:
+    processor = FfmpegProcessor("ffmpeg", "ffprobe", RecordingRunner(stdout=stdout))
+
+    with pytest.raises(ProcessingFailure, match="没有可用的音轨"):
+        processor.probe_audio(tmp_path / "in.mp4")
 
 
 @pytest.mark.parametrize(
@@ -79,7 +147,7 @@ def test_asr_outputs_use_exact_contract(tmp_path: Path, method: str, codec: list
 @pytest.mark.parametrize(
     ("method", "codec"),
     [
-        ("slice_audio", ["-vn", "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k"]),
+        ("slice_audio", ["-vn", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "128k"]),
         ("slice_asr_mp3", ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "32k"]),
     ],
 )
@@ -668,6 +736,27 @@ def test_real_ffmpeg_produces_contracted_audio(tmp_path: Path) -> None:
     )  # fmt: skip
     assert clip["duration"] == pytest.approx(0.6, abs=0.08)
     assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
+
+
+@needs_ffmpeg
+def test_real_ffmpeg_copies_stereo_aac_without_reencoding(tmp_path: Path) -> None:
+    assert FFMPEG is not None and FFPROBE is not None
+    wav = tmp_path / "source.wav"
+    square_wave(wav)
+    source = tmp_path / "source.m4a"
+    subprocess.run(
+        [FFMPEG, "-v", "error", "-y", "-i", str(wav), "-ac", "2", "-c:a", "aac", "-b:a", "128k",
+         str(source)],
+        check=True,
+    )  # fmt: skip
+    processor = FfmpegProcessor(FFMPEG, FFPROBE, CommandRunner())
+
+    web = stream_info(processor.to_web_audio(source, tmp_path / "audio.m4a"))
+    original = stream_info(source)
+
+    assert (web["codec"], web["channels"]) == ("aac", 2)
+    # 直接拷贝不重新编码，码率与原音轨一致（重新编码会变成 160k）。
+    assert web["bit_rate"] == pytest.approx(original["bit_rate"], rel=0.01)
 
 
 @needs_ffmpeg

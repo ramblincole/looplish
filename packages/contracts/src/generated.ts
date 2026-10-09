@@ -285,7 +285,7 @@ export interface components {
             language?: string | null;
             /**
              * Leadpad
-             * @default 0.2
+             * @default 0.3
              */
             leadPad?: number;
             /**
@@ -295,7 +295,7 @@ export interface components {
             makeClips?: boolean;
             /**
              * Maxduration
-             * @default 14
+             * @default 30
              */
             maxDuration?: number;
             /**

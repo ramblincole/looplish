@@ -48,7 +48,6 @@ def build_local_backend(settings: Settings) -> TranscriptionBackend:
         settings.asr_device,
         settings.asr_compute_type,
         cpu_threads=settings.asr_cpu_threads or default_cpu_threads(),
-        batch_size=settings.asr_batch_size,
     )
 
 

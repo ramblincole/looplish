@@ -254,9 +254,9 @@ def test_config_does_not_expose_secrets(client: TestClient) -> None:
         "language": "en",
         "subtitleSource": "auto",
         "minDuration": 1.0,
-        "maxDuration": 14.0,
+        "maxDuration": 30.0,
         "hardPause": 0.75,
-        "leadPad": 0.2,
+        "leadPad": 0.3,
         "tailPad": 0.4,
     }
 

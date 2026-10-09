@@ -222,6 +222,43 @@ def test_auto_mode_falls_back_to_asr_when_subtitle_is_unusable(tmp_path: Path) -
     assert result.transcript_source == "asr:recording:test"
 
 
+UNPUNCTUATED_VTT = (
+    "WEBVTT\n\n"
+    "00:00:01.000 --> 00:00:03.000\nsubtitle line one\n\n"
+    "00:00:04.000 --> 00:00:06.000\nsubtitle line two\n"
+)
+
+
+def test_auto_mode_prefers_asr_over_unpunctuated_subtitles(tmp_path: Path) -> None:
+    h = harness(tmp_path, subtitles={"source.en.vtt": UNPUNCTUATED_VTT})
+    queued(h, URL)
+
+    result = h.pipeline.run(JOB_ID)
+
+    assert "transcribe:local" in h.calls.log
+    assert result.transcript_source == "asr:recording:test"
+
+
+def test_auto_mode_keeps_unpunctuated_subtitles_for_cloud_backend(tmp_path: Path) -> None:
+    h = harness(tmp_path, subtitles={"source.en.vtt": UNPUNCTUATED_VTT})
+    queued(h, URL, asr_backend="openai")
+
+    result = h.pipeline.run(JOB_ID)
+
+    assert not any(call.startswith("transcribe:") for call in h.calls.log)
+    assert result.transcript_source == "subtitle:source.en.vtt"
+
+
+def test_existing_mode_keeps_unpunctuated_subtitles(tmp_path: Path) -> None:
+    h = harness(tmp_path, subtitles={"source.en.vtt": UNPUNCTUATED_VTT})
+    queued(h, URL, subtitle_source=SubtitleSource.EXISTING)
+
+    result = h.pipeline.run(JOB_ID)
+
+    assert "transcribe:local" not in h.calls.log
+    assert result.transcript_source == "subtitle:source.en.vtt"
+
+
 def test_subtitle_language_priority_is_respected(tmp_path: Path) -> None:
     british = VTT.replace("Subtitle", "British")
     h = harness(tmp_path, subtitles={"source.en.vtt": VTT, "source.en-GB.vtt": british})

@@ -34,9 +34,9 @@ class ProblemDetails(ApiModel):
 
 class SegmentationRequest(ApiModel):
     minDuration: Annotated[float, Field(ge=0.2, le=10)] = 1.0
-    maxDuration: Annotated[float, Field(ge=2, le=60)] = 14.0
+    maxDuration: Annotated[float, Field(ge=2, le=60)] = 30.0
     hardPause: Annotated[float, Field(ge=0.1, le=5)] = 0.75
-    leadPad: Annotated[float, Field(ge=0, le=2)] = 0.2
+    leadPad: Annotated[float, Field(ge=0, le=2)] = 0.3
     tailPad: Annotated[float, Field(ge=0, le=2)] = 0.4
 
     @model_validator(mode="after")

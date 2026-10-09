@@ -42,18 +42,17 @@ class Settings(BaseSettings):
     asr_compute_type: str = "int8"
     # 本地识别引擎：auto 在 Apple 芯片且装了 mlx-whisper 时用 GPU（mlx），否则用 faster-whisper。
     asr_engine: str = "auto"
-    # faster-whisper 的 CPU 线程数，0 表示按本机核心数自动选择；批量大小 1 表示逐段解码。
+    # faster-whisper 的 CPU 线程数，0 表示按本机核心数自动选择。
     asr_cpu_threads: int = Field(default=0, ge=0, le=64)
-    asr_batch_size: int = Field(default=8, ge=1, le=64)
     asr_api_key: SecretStr | None = Field(default=None, repr=False)
     asr_base_url: str | None = None
     asr_api_model: str | None = None
     subtitle_source: SubtitleSource = SubtitleSource.AUTO
     subtitle_languages: str = "en,en-US,en-GB"
     seg_min_seconds: float = 1.0
-    seg_max_seconds: float = 14.0
+    seg_max_seconds: float = 30.0
     seg_hard_pause_seconds: float = 0.75
-    seg_lead_pad_seconds: float = 0.20
+    seg_lead_pad_seconds: float = 0.30
     seg_tail_pad_seconds: float = 0.40
     # 是否允许用服务器上的本机文件路径创建任务；不设置时只在监听回环地址时允许。
     allow_local_paths: bool | None = None

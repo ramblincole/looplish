@@ -43,7 +43,7 @@ Looplish 把顺序换回来：遮住原文，一句一句反复听，听清了�
 ## 功能特性
 
 - **多种来源**：粘贴 yt-dlp 支持的视频链接（YouTube、Bilibili 等），可以直接粘贴带标题的分享文案，会自动提取其中的链接；也可以上传或拖放本地音视频文件，或者在本机运行时直接填写文件路径。
-- **字幕优先，识别兜底**：默认先用视频自带的人工字幕，没有时再做语音识别；也可以设为「只用自带字幕」或「总是重新识别」。
+- **字幕优先，识别兜底**：默认先用视频自带的人工字幕，没有时再做语音识别；自动模式下若启用本地识别，没有标点的字幕会改用语音识别重新转写。也可以设为「只用自带字幕」或「总是重新识别」。
 - **本地或云端识别**：本地使用 [faster-whisper](https://github.com/SYSTRAN/faster-whisper)，在 Apple 芯片上自动改用 [MLX](https://github.com/ml-explore/mlx) 调用 GPU 加速；也支持 OpenAI、Groq 等兼容 OpenAI 接口的云端服务。
 - **智能切句**：结合词级时间戳、停顿和标点切句，并在句首句尾留出缓冲，避免吞音。最短 / 最长句长、停顿阈值、首尾留白都可以调整，处理完成后还能重新切句，无需再次识别。
 - **练习台**：
@@ -197,12 +197,11 @@ LOOPLISH_WEB_DIST_DIR=apps/web/dist uv run --project apps/api --extra local-asr 
 | `LOOPLISH_ASR_ENGINE` | `auto` | 本地识别引擎：`auto` / `faster-whisper` / `mlx` |
 | `LOOPLISH_ASR_DEVICE` / `LOOPLISH_ASR_COMPUTE_TYPE` | `auto` / `int8` | faster-whisper 的设备与精度 |
 | `LOOPLISH_ASR_CPU_THREADS` | 空 | faster-whisper 的 CPU 线程数（0 – 64）；留空或 `0` 时按核心数自动选择（核心数的 2/3，限定在 4 – 12） |
-| `LOOPLISH_ASR_BATCH_SIZE` | `8` | faster-whisper 的批量识别大小（1 – 64）；设为 `1` 时不启用批量识别 |
 | `LOOPLISH_SUBTITLE_SOURCE` | `auto` | 字幕来源：`auto` / `existing` / `asr` |
 | `LOOPLISH_SUBTITLE_LANGUAGES` | `en,en-US,en-GB` | 优先使用的字幕语言 |
-| `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `14.0` | 单句最短 / 最长时长 |
-| `LOOPLISH_SEG_HARD_PAUSE_SECONDS` | `0.75` | 超过这个停顿一定断句 |
-| `LOOPLISH_SEG_LEAD_PAD_SECONDS` / `LOOPLISH_SEG_TAIL_PAD_SECONDS` | `0.20` / `0.40` | 句首 / 句尾留白 |
+| `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `30.0` | 单句最短 / 最长时长；最长只作兜底，超长句只在停顿或逗号处拆开 |
+| `LOOPLISH_SEG_HARD_PAUSE_SECONDS` | `0.75` | 转写缺少标点时，超过这个停顿就断句；有标点时以句末标点为准 |
+| `LOOPLISH_SEG_LEAD_PAD_SECONDS` / `LOOPLISH_SEG_TAIL_PAD_SECONDS` | `0.30` / `0.40` | 句首 / 句尾留白，最多用满句间空隙，不会盖到相邻句 |
 | `LOOPLISH_ALLOW_LOCAL_PATHS` | 空 | 是否允许用服务器本机路径创建任务；留空时仅在监听回环地址时允许 |
 
 </details>

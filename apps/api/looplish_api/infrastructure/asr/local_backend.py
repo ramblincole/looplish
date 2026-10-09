@@ -7,6 +7,7 @@ from looplish_api.domain.models import Transcript
 from looplish_api.domain.ports import ProgressCallback
 from looplish_api.infrastructure.asr.local_progress import LocalProgress
 from looplish_api.infrastructure.asr.model_store import ensure_model
+from looplish_api.infrastructure.asr.prompting import decoding_options
 from looplish_api.infrastructure.asr.timeline import RawWord, build_transcript
 
 # 与 faster_whisper.utils.download_model 下载的文件一致，已有缓存可直接复用。
@@ -37,7 +38,6 @@ class LocalWhisperBackend:
         device: str = "auto",
         compute_type: str = "int8",
         cpu_threads: int = 0,
-        batch_size: int = 8,
         model: Any | None = None,
     ) -> None:
         self.model_name = model_name
@@ -45,7 +45,6 @@ class LocalWhisperBackend:
         self.device = device
         self.compute_type = compute_type
         self.cpu_threads = cpu_threads
-        self.batch_size = batch_size
         self._model = model
         self._lock = Lock()
 
@@ -66,19 +65,18 @@ class LocalWhisperBackend:
             if self._model is None:
                 # 延迟导入和建模，避免未选择 local 时加载大型依赖或下载模型。
                 try:
-                    from faster_whisper import BatchedInferencePipeline, WhisperModel
+                    from faster_whisper import WhisperModel
                 except ImportError as error:
                     raise missing_dependency() from error
                 path = self._model_path(report)
                 report.model_loading()
-                model = WhisperModel(
+                # 不用批量管线：批量模式各段独立解码，标点无法延续，整段容易漏标点。
+                self._model = WhisperModel(
                     path,
                     device=self.device,
                     compute_type=self.compute_type,
                     cpu_threads=self.cpu_threads,
                 )
-                # 批量推理把 VAD 切出的人声片段并行解码，CPU 上约快一倍。
-                self._model = BatchedInferencePipeline(model) if self.batch_size > 1 else model
             return self._model
 
     def transcribe(
@@ -91,15 +89,13 @@ class LocalWhisperBackend:
         try:
             model = self._load(report)
             report.detecting_speech()
-            batching = {"batch_size": self.batch_size} if self.batch_size > 1 else {}
             segments, info = model.transcribe(
                 str(audio_path),
                 language=language,
                 word_timestamps=True,
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 300},
-                condition_on_previous_text=False,
-                **batching,
+                **decoding_options(language),
             )
             words: list[RawWord] = []
             for segment in segments:

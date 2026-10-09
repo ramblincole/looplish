@@ -45,7 +45,7 @@ Looplish puts listening first again: hide the text, loop each sentence until you
 ## Features
 
 - **Flexible input**: paste any link [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports (YouTube, Bilibili, …). You can paste a whole share message and the link is extracted from it automatically. You can also upload or drag in a local audio/video file, or enter a file path directly when the server runs on your machine.
-- **Subtitles first, ASR as fallback**: existing human-made subtitles are used by default, with speech recognition when none are available. You can also choose "existing subtitles only" or "always transcribe".
+- **Subtitles first, ASR as fallback**: existing human-made subtitles are used by default, with speech recognition when none are available. In auto mode with local recognition, subtitles without punctuation are re-recognized instead. You can also choose "existing subtitles only" or "always transcribe".
 - **Local or cloud ASR**: runs locally with [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and switches to [MLX](https://github.com/ml-explore/mlx) for GPU acceleration on Apple silicon. OpenAI, Groq and other OpenAI-compatible services are supported too.
 - **Smart segmentation**: sentences are cut from word-level timestamps, pauses and punctuation, with padding before and after each one so no syllables get clipped. Minimum/maximum length, pause threshold and padding are all adjustable, and you can re-segment a finished job without transcribing it again.
 - **Practice view**:
@@ -199,12 +199,11 @@ Every setting is an environment variable prefixed with `LOOPLISH_`, and can also
 | `LOOPLISH_ASR_ENGINE` | `auto` | Local engine: `auto` / `faster-whisper` / `mlx` |
 | `LOOPLISH_ASR_DEVICE` / `LOOPLISH_ASR_COMPUTE_TYPE` | `auto` / `int8` | faster-whisper device and precision |
 | `LOOPLISH_ASR_CPU_THREADS` | empty | faster-whisper CPU threads (0 – 64); empty or `0` picks a count from the CPU cores (2/3 of the cores, clamped to 4 – 12) |
-| `LOOPLISH_ASR_BATCH_SIZE` | `8` | faster-whisper batch size (1 – 64); `1` disables batched inference |
 | `LOOPLISH_SUBTITLE_SOURCE` | `auto` | Subtitle source: `auto` / `existing` / `asr` |
 | `LOOPLISH_SUBTITLE_LANGUAGES` | `en,en-US,en-GB` | Preferred subtitle languages |
-| `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `14.0` | Minimum / maximum sentence length |
-| `LOOPLISH_SEG_HARD_PAUSE_SECONDS` | `0.75` | A pause longer than this always ends a sentence |
-| `LOOPLISH_SEG_LEAD_PAD_SECONDS` / `LOOPLISH_SEG_TAIL_PAD_SECONDS` | `0.20` / `0.40` | Padding before / after each sentence |
+| `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `30.0` | Minimum / maximum sentence length; the maximum is only a safety net, and long sentences are split only at pauses or commas |
+| `LOOPLISH_SEG_HARD_PAUSE_SECONDS` | `0.75` | When the transcript lacks punctuation, a pause longer than this ends a sentence; punctuated transcripts follow sentence-ending punctuation |
+| `LOOPLISH_SEG_LEAD_PAD_SECONDS` / `LOOPLISH_SEG_TAIL_PAD_SECONDS` | `0.30` / `0.40` | Padding before / after each sentence, up to the whole gap but never into a neighbouring sentence |
 | `LOOPLISH_ALLOW_LOCAL_PATHS` | empty | Allow creating jobs from paths on the server; when empty, allowed only on a loopback address |
 
 </details>

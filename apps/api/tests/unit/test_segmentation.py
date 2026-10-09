@@ -4,7 +4,12 @@ from collections.abc import Sequence
 import pytest
 
 from looplish_api.domain.models import SegmentationOptions, Sentence, Transcript, Word
-from looplish_api.domain.segmentation import build_sentences
+from looplish_api.domain.segmentation import (
+    PUNCTUATION_WINDOW,
+    _locally_punctuated,
+    build_sentences,
+    is_punctuated,
+)
 
 
 def words(*items: tuple[float, float, str]) -> tuple[Word, ...]:
@@ -32,7 +37,10 @@ def assert_invariants(
         assert sentence.speech_start < sentence.speech_end <= sentence.end <= media_duration
         assert sentence.text == "".join(word.text for word in sentence.words).strip()
         if index:
-            assert result[index - 1].end <= sentence.start
+            previous = result[index - 1]
+            # 留白可以用满句间空隙、相邻窗口可能重叠，但窗口绝不覆盖邻句的语音。
+            assert previous.end <= sentence.speech_start
+            assert previous.speech_end <= sentence.start
     # 切句只分组，不增删、不改写、不重排任何词。
     kept = [word for word in source if word.text.strip()]
     assert [word for sentence in result for word in sentence.words] == kept
@@ -104,13 +112,14 @@ def test_pause_below_hard_pause_keeps_words_together() -> None:
     assert texts(result) == ["hello again"]
 
 
-def test_clip_boundaries_never_overlap() -> None:
+def test_clip_windows_never_cover_neighbour_speech() -> None:
     result = build_sentences(
         words((0.5, 1.0, "One."), (1.2, 1.8, "Two.")),
         2,
         SegmentationOptions(lead_pad=0.2, tail_pad=0.4),
     )
-    assert result[0].end <= result[1].start
+    assert result[0].end == pytest.approx(1.2)
+    assert result[1].start == pytest.approx(1.0)
     assert result[0].start >= 0
     assert result[-1].end <= 2
 
@@ -208,7 +217,7 @@ def test_long_sentence_splits_at_longest_pause() -> None:
 
 
 def test_long_sentence_is_split_recursively_until_within_limit() -> None:
-    source = spoken(*[f" w{index}" for index in range(40)], length=0.4, gap=0.1)
+    source = spoken(*[f" w{index}" for index in range(40)], length=0.4, gap=0.2)
 
     result = segment(source, 25, SegmentationOptions(max_duration=5.0))
 
@@ -237,24 +246,25 @@ def test_split_respects_min_duration_on_both_sides() -> None:
 
 def fragment_case(before: float, after: float, first: str = " we walked home") -> tuple[Word, ...]:
     # 三个由长停顿分开的句段，中间是不足 minDuration 的无标点碎片。
+    # 无标点转写，覆盖按停顿切的兜底路径。
     head = spoken(*first.split(" ")[1:], length=0.5, gap=0.1)
     head = tuple(Word(word.start, word.end, f" {word.text}") for word in head)
     middle_start = head[-1].end + before
     middle = (Word(middle_start, middle_start + 0.3, " and"),)
-    tail = spoken(" it", " rained.", start=middle[0].end + after, length=0.5, gap=0.1)
+    tail = spoken(" it", " rained", start=middle[0].end + after, length=0.5, gap=0.1)
     return head + middle + tail
 
 
 def test_short_fragment_merges_toward_shorter_previous_pause() -> None:
     result = segment(fragment_case(before=0.8, after=1.2), 10)
 
-    assert texts(result) == ["we walked home and", "it rained."]
+    assert texts(result) == ["we walked home and", "it rained"]
 
 
 def test_short_fragment_merges_toward_shorter_next_pause() -> None:
     result = segment(fragment_case(before=1.2, after=0.8), 10)
 
-    assert texts(result) == ["we walked home", "and it rained."]
+    assert texts(result) == ["we walked home", "and it rained"]
 
 
 def test_equal_pauses_merge_fragment_backward() -> None:
@@ -264,17 +274,81 @@ def test_equal_pauses_merge_fragment_backward() -> None:
         (0.5, 1.5, " walked"),
         (2.5, 2.75, " and"),
         (3.75, 4.5, " it"),
-        (4.5, 5.0, " rained."),
+        (4.5, 5.0, " rained"),
     )
 
-    assert texts(segment(source, 10)) == ["we walked and", "it rained."]
+    assert texts(segment(source, 10)) == ["we walked and", "it rained"]
 
 
 def test_fragment_never_merges_across_terminal_punctuation() -> None:
     # 前一句已完整，即使前侧停顿更短也只能向后合并。
     result = segment(fragment_case(before=0.8, after=1.2, first=" we went home."), 10)
 
-    assert texts(result) == ["we went home.", "and it rained."]
+    assert texts(result) == ["we went home.", "and it rained"]
+
+
+def test_punctuation_density_threshold() -> None:
+    sparse = spoken(*[f" w{index}" for index in range(40)], " end.")
+    dense = spoken(*[f" w{index}" for index in range(39)], " end.")
+
+    assert not is_punctuated(sparse)
+    assert is_punctuated(dense)
+    assert not is_punctuated(())
+
+
+def test_lowercase_continuation_across_long_pause_stays_in_sentence() -> None:
+    # 实测：VAD 拼接把「So I」和「just realized」的时间戳拉开 2.3 秒，其实是连着说的。
+    head = spoken(" This", " is", " a", " game", " changer.", " So", " I")
+    tail = spoken(" just", " realized", " something.", start=head[-1].end + 2.3)
+
+    assert texts(segment(head + tail, 10)) == [
+        "This is a game changer.",
+        "So I just realized something.",
+    ]
+
+
+def test_incomplete_group_merges_regardless_of_duration() -> None:
+    head = spoken(" I", " was", " worried", " that", " it", " would", " be", " cold,", " but...")
+    tail = spoken(" So", " I", " got", " black", " nails.", start=head[-1].end + 1.0)
+
+    assert texts(segment(head + tail, 10)) == [
+        "I was worried that it would be cold, but... So I got black nails."
+    ]
+
+
+def test_incomplete_group_does_not_merge_past_max_duration() -> None:
+    head = spoken(" I", " was", " worried,", " but...")
+    tail = spoken(" So", " I", " got", " nails.", start=head[-1].end + 3.0)
+
+    result = segment(head + tail, 10, SegmentationOptions(max_duration=4.0))
+
+    assert texts(result) == ["I was worried, but...", "So I got nails."]
+
+
+def test_unpunctuated_transcript_still_splits_on_pause() -> None:
+    first = spoken(" so", " I", " went", " home", length=0.4)
+    second = spoken(" and", " then", " I", " slept", start=first[-1].end + 1.0, length=0.4)
+
+    assert texts(segment(first + second, 10)) == ["so I went home", "and then I slept"]
+
+
+def test_long_split_never_cuts_between_touching_words() -> None:
+    source = spoken(*[f" w{index}" for index in range(20)], length=0.4, gap=0.0)
+
+    result = segment(source, 10, SegmentationOptions(max_duration=4.0))
+
+    assert len(result) == 1
+
+
+def test_long_split_uses_a_real_pause() -> None:
+    first = spoken(*[f" a{index}" for index in range(8)], length=0.4, gap=0.0)
+    second = spoken(
+        *[f" b{index}" for index in range(8)], start=first[-1].end + 0.2, length=0.4, gap=0.0
+    )
+
+    result = segment(first + second, 10, SegmentationOptions(max_duration=4.0))
+
+    assert [sentence.words for sentence in result] == [first, second]
 
 
 def test_trailing_fragment_after_complete_sentence_stays_alone() -> None:
@@ -312,10 +386,15 @@ def test_padding_uses_configured_amount_away_from_media_edges() -> None:
     assert result[1].end == pytest.approx(3.9)
 
 
-def test_padding_shares_short_gap_evenly() -> None:
-    result = segment(words((0.0, 0.5, " Hi."), (0.8, 1.2, " There.")), 2)
+def test_padding_may_use_the_whole_gap() -> None:
+    result = segment(
+        words((0.0, 0.5, " Hi."), (0.8, 1.2, " There.")),
+        2,
+        SegmentationOptions(lead_pad=0.3, tail_pad=0.4),
+    )
 
-    assert result[0].end == result[1].start == pytest.approx(0.65)
+    assert result[0].end == pytest.approx(0.8)
+    assert result[1].start == pytest.approx(0.5)
 
 
 def test_overlapping_words_are_never_separated() -> None:
@@ -326,10 +405,10 @@ def test_overlapping_words_are_never_separated() -> None:
 
 
 def test_long_group_is_not_split_between_overlapping_words() -> None:
-    source = spoken(*[f" w{index}" for index in range(12)], length=0.5, gap=0.1)
+    source = spoken(*[f" w{index}" for index in range(12)], length=0.5, gap=0.2)
     overlapped = (
         source[:6]
-        + tuple(Word(word.start - 0.15, word.end, word.text) for word in source[6:7])
+        + tuple(Word(word.start - 0.25, word.end, word.text) for word in source[6:7])
         + source[7:]
     )
 
@@ -423,3 +502,71 @@ def test_random_timelines_satisfy_invariants(seed: int) -> None:
     result = segment(source, duration, options)
 
     assert build_sentences(source, duration, options) == result
+
+
+@pytest.mark.parametrize("seed", range(100))
+def test_random_unpunctuated_timelines_satisfy_invariants(seed: int) -> None:
+    generator = random.Random(seed)
+    source, duration = random_timeline(generator)
+    # 去掉句末标点后走的是纯停顿路径，同样要满足全部不变量。
+    stripped = tuple(
+        Word(word.start, word.end, word.text.rstrip(".?!"))
+        for word in source
+        if word.text.rstrip(".?!").strip()
+    )
+    if not stripped:
+        return
+    options = SegmentationOptions(
+        min_duration=generator.choice([0.5, 1.0, 2.0]),
+        max_duration=generator.choice([3.0, 6.0, 14.0]),
+        hard_pause=generator.choice([0.5, 0.75, 1.5]),
+    )
+
+    result = segment(stripped, duration, options)
+
+    assert build_sentences(stripped, duration, options) == result
+
+
+def test_unpunctuated_stretch_inside_punctuated_transcript_still_splits_on_pause() -> None:
+    head = spoken(*[" We", " are", " here."] * 10)
+    cursor = head[-1].end + 1.0
+    tail: list[Word] = []
+    for _ in range(15):
+        phrase = spoken(" and", " then", " we", " went", start=cursor, length=0.4)
+        tail.extend(phrase)
+        cursor = phrase[-1].end + 1.0
+
+    result = segment(head + tuple(tail), cursor + 1.0)
+
+    assert max(s.speech_end - s.speech_start for s in result) < 20
+    assert texts(result)[-1] == "and then we went"
+
+
+def test_locally_punctuated_window_boundaries() -> None:
+    terminal = PUNCTUATION_WINDOW + 5
+    items = spoken(*[" Word"] * (2 * PUNCTUATION_WINDOW + 10))
+    items = (
+        *items[:terminal],
+        Word(items[terminal].start, items[terminal].end, " end."),
+        *items[terminal + 1 :],
+    )
+
+    flags = _locally_punctuated(items)
+
+    assert flags[terminal - PUNCTUATION_WINDOW] is True
+    assert flags[terminal - PUNCTUATION_WINDOW - 1] is False
+    assert flags[terminal + PUNCTUATION_WINDOW] is True
+    assert flags[terminal + PUNCTUATION_WINDOW + 1] is False
+
+
+def test_locally_punctuated_without_terminal_is_all_false() -> None:
+    assert _locally_punctuated(spoken(" a", " b", " c")) == (False, False, False)
+
+
+def test_capitalised_word_after_long_pause_starts_new_sentence() -> None:
+    head = spoken(" We", " got", " home.", " Then", " we")
+    tail = spoken(" Slept", " well.", start=head[-1].end + 3.0)
+
+    result = segment(head + tail, 10, SegmentationOptions(max_duration=4.0))
+
+    assert texts(result) == ["We got home.", "Then we", "Slept well."]
