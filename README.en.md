@@ -199,7 +199,6 @@ Every setting is an environment variable prefixed with `LOOPLISH_`, and can also
 | `LOOPLISH_ASR_ENGINE` | `auto` | Local engine: `auto` / `faster-whisper` / `mlx` |
 | `LOOPLISH_ASR_DEVICE` / `LOOPLISH_ASR_COMPUTE_TYPE` | `auto` / `int8` | faster-whisper device and precision |
 | `LOOPLISH_ASR_CPU_THREADS` | empty | faster-whisper CPU threads (0 – 64); empty or `0` picks a count from the CPU cores (2/3 of the cores, clamped to 4 – 12) |
-| `LOOPLISH_ASR_BATCH_SIZE` | `8` | faster-whisper batch size (1 – 64); `1` disables batched inference |
 | `LOOPLISH_SUBTITLE_SOURCE` | `auto` | Subtitle source: `auto` / `existing` / `asr` |
 | `LOOPLISH_SUBTITLE_LANGUAGES` | `en,en-US,en-GB` | Preferred subtitle languages |
 | `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `30.0` | Minimum / maximum sentence length; the maximum is only a safety net, and long sentences are split only at pauses or commas |

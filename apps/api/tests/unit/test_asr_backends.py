@@ -26,6 +26,7 @@ from looplish_api.infrastructure.asr.openai_backend import (
     ChunkedCloudBackend,
     OpenAICompatibleBackend,
 )
+from looplish_api.infrastructure.asr.prompting import PUNCTUATED_PROMPT
 from looplish_api.infrastructure.asr.registry import GROQ_BASE_URL, build_backend
 from looplish_api.infrastructure.asr.timeline import build_transcript
 from looplish_api.infrastructure.storage.serde import job_result_to_dict
@@ -452,21 +453,27 @@ def test_local_backend_uses_exact_faster_whisper_parameters(tmp_path: Path) -> N
                 "word_timestamps": True,
                 "vad_filter": True,
                 "vad_parameters": {"min_silence_duration_ms": 300},
-                "condition_on_previous_text": False,
-                "batch_size": 8,
+                "condition_on_previous_text": True,
+                "initial_prompt": PUNCTUATED_PROMPT,
             },
         )
     ]
 
 
-def test_local_backend_without_batching_decodes_sequentially(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("language", "prompted"), [(None, True), ("en-US", True), ("de", False)])
+def test_local_backend_prompts_punctuation_only_for_english(
+    tmp_path: Path, language: str | None, prompted: bool
+) -> None:
     model = FakeWhisperModel([FakeSegment(1.0, [FakeWord(0.1, 0.5, " Hi.", 0.95)])])
 
-    LocalWhisperBackend("small.en", tmp_path, batch_size=1, model=model).transcribe(
-        tmp_path / "in.wav", "en", None
+    LocalWhisperBackend("small.en", tmp_path, model=model).transcribe(
+        tmp_path / "in.wav", language, None
     )
 
-    assert "batch_size" not in model.calls[0][1]
+    kwargs = model.calls[0][1]
+    assert kwargs["condition_on_previous_text"] is True
+    assert ("initial_prompt" in kwargs) is prompted
+    assert "batch_size" not in kwargs
 
 
 def test_local_backend_maps_words_progress_and_detected_language(tmp_path: Path) -> None:
@@ -542,7 +549,6 @@ def test_model_is_loaded_lazily_once_with_configured_options(
         "faster_whisper",
         types.SimpleNamespace(
             WhisperModel=WhisperModel,
-            BatchedInferencePipeline=lambda model: model,
             utils=types.SimpleNamespace(_MODELS={"small.en": "Systran/faster-whisper-small.en"}),
         ),
     )
@@ -624,7 +630,7 @@ def test_registry_builds_fake_and_local(tmp_path: Path) -> None:
     )
     assert isinstance(local, LocalWhisperBackend)
     assert (local.model_name, local.device, local.compute_type) == ("base.en", "cpu", "int8")
-    assert (local.cpu_threads, local.batch_size) == (6, 8)
+    assert local.cpu_threads == 6
     assert local.models_dir == tmp_path / "models"
     # 构造时不加载模型、不导入 faster-whisper。
     assert local._model is None
@@ -951,6 +957,8 @@ def test_mlx_backend_maps_speech_only_timestamps_back(
     assert calls[0]["path_or_hf_repo"] == str(tmp_path / "weights")
     assert calls[0]["word_timestamps"] is True
     assert calls[0]["verbose"] is False
+    assert calls[0]["condition_on_previous_text"] is True
+    assert calls[0]["initial_prompt"] == PUNCTUATED_PROMPT
     # 送进模型的 0.5 秒是原音频第 2.5 秒；2.5 秒落在第二段人声里，对应原音频第 7.5 秒。
     assert [(word.start, word.end) for word in transcript.words] == [(2.5, 3.5), (7.5, 8.5)]
     assert transcript.language == "en"

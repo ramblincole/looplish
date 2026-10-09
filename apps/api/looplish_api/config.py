@@ -42,9 +42,8 @@ class Settings(BaseSettings):
     asr_compute_type: str = "int8"
     # 本地识别引擎：auto 在 Apple 芯片且装了 mlx-whisper 时用 GPU（mlx），否则用 faster-whisper。
     asr_engine: str = "auto"
-    # faster-whisper 的 CPU 线程数，0 表示按本机核心数自动选择；批量大小 1 表示逐段解码。
+    # faster-whisper 的 CPU 线程数，0 表示按本机核心数自动选择。
     asr_cpu_threads: int = Field(default=0, ge=0, le=64)
-    asr_batch_size: int = Field(default=8, ge=1, le=64)
     asr_api_key: SecretStr | None = Field(default=None, repr=False)
     asr_base_url: str | None = None
     asr_api_model: str | None = None
