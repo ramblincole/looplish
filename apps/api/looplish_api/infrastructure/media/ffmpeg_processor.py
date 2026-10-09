@@ -8,7 +8,8 @@ from looplish_api.infrastructure.media.command_runner import CommandRunner
 
 # 练习页直接播放这个文件：AAC 原样拷贝不损失任何音质；其他编码转成 160k AAC 并保留立体声，
 # 人声与背景音乐的空间分离有助于听清，混成单声道会让两者叠在一起。
-WEB_AUDIO_COPY = ["-vn", "-c:a", "copy", "-movflags", "+faststart"]
+# probe_audio 看的是 a:0，显式映射它，避免 ffmpeg 自选“最佳”音轨导致探测与处理不是同一条。
+WEB_AUDIO_COPY = ["-map", "0:a:0", "-vn", "-c:a", "copy", "-movflags", "+faststart"]
 WEB_AUDIO_ENCODE = ["-ar", "44100", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart"]
 ASR_WAV = ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"]
 ASR_MP3 = ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "32k"]
@@ -122,7 +123,7 @@ class FfmpegProcessor:
                 target.unlink(missing_ok=True)
         # 只把多声道降到立体声；单声道和立体声保持原样。
         downmix = ["-ac", "2"] if stream.channels > 2 else []
-        return self._convert(source, target, ["-vn", *downmix, *WEB_AUDIO_ENCODE])
+        return self._convert(source, target, ["-map", "0:a:0", "-vn", *downmix, *WEB_AUDIO_ENCODE])
 
     def to_asr_wav(self, source: Path, target: Path) -> Path:
         return self._convert(source, target, ASR_WAV)

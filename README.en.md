@@ -45,7 +45,7 @@ Looplish puts listening first again: hide the text, loop each sentence until you
 ## Features
 
 - **Flexible input**: paste any link [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports (YouTube, Bilibili, …). You can paste a whole share message and the link is extracted from it automatically. You can also upload or drag in a local audio/video file, or enter a file path directly when the server runs on your machine.
-- **Subtitles first, ASR as fallback**: existing human-made subtitles are used by default, with speech recognition when none are available. You can also choose "existing subtitles only" or "always transcribe".
+- **Subtitles first, ASR as fallback**: existing human-made subtitles are used by default, with speech recognition when none are available. In auto mode with local recognition, subtitles without punctuation are re-recognized instead. You can also choose "existing subtitles only" or "always transcribe".
 - **Local or cloud ASR**: runs locally with [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and switches to [MLX](https://github.com/ml-explore/mlx) for GPU acceleration on Apple silicon. OpenAI, Groq and other OpenAI-compatible services are supported too.
 - **Smart segmentation**: sentences are cut from word-level timestamps, pauses and punctuation, with padding before and after each one so no syllables get clipped. Minimum/maximum length, pause threshold and padding are all adjustable, and you can re-segment a finished job without transcribing it again.
 - **Practice view**:

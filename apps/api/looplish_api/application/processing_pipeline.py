@@ -61,8 +61,13 @@ class ProcessingPipeline:
         except ValueError:
             # 字幕为空或编码无法读取时视同没有字幕：auto 回退到识别，existing 由调用方报错。
             return None
-        # 无标点字幕只能按停顿切句；auto 模式宁可交给 ASR 识别出带标点的文本。
-        if options.subtitle_source is SubtitleSource.AUTO and not is_punctuated(transcript.words):
+        # 无标点字幕只能按停顿切句；但只有本地识别会产出带标点的文本，云端后端的词数组同样没有标点，
+        # 为它丢掉字幕只会白花钱换更差的结果，所以仅在后端为 local 时才放弃无标点字幕。
+        if (
+            options.subtitle_source is SubtitleSource.AUTO
+            and options.asr_backend == "local"
+            and not is_punctuated(transcript.words)
+        ):
             return None
         return transcript
 

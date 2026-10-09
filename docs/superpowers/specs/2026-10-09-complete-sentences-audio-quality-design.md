@@ -65,7 +65,7 @@
 
 ### 4.1 是否有标点
 
-`_is_punctuated(words)`：句末标点（复用 `_is_terminal`）数量 × 40 ≥ 词数，即平均每 40 词至少一个句末。整份转写只判断一次，结果决定下面用哪套规则。
+`_is_punctuated(words)`：句末标点（复用 `_is_terminal`）数量 × 40 ≥ 词数，即平均每 40 词至少一个句末。整份转写的这一判断只用于字幕（见第 5 节）；切句时按局部判断：一个词在 20 词（`PUNCTUATION_WINDOW`，即密度的一半）以内有句末标点，就算处在有标点的区域，下面的规则逐词按所在区域取用，一长段无标点内容不会被前后的标点区域带偏。
 
 ### 4.2 有标点时：完整句优先
 
@@ -111,16 +111,17 @@ end   = min(max(media_duration, speech_end), speech_end + tail_pad, 下一句 sp
 
 ## 5. 字幕选择（`application/processing_pipeline.py`）
 
-`_subtitle` 解析出字幕后，若 `subtitle_source` 为 `auto` 且该字幕判定为无标点（同 4.1 的判断，公开为领域函数 `is_punctuated(words)`），返回 `None`，交给 ASR。`existing` 模式不做此判断。
+`_subtitle` 解析出字幕后，若 `subtitle_source` 为 `auto` 且该字幕判定为无标点（同 4.1 的判断，公开为领域函数 `is_punctuated(words)`），返回 `None`，交给 ASR。`existing` 模式不做此判断；只有 `asr_backend == "local"` 时才丢弃——云端后端（openai/groq）的词数组同样没有标点，丢掉字幕只会白花钱。
 
 ## 6. 音频（`infrastructure/media/ffmpeg_processor.py`）
 
 ### 6.1 探测音轨
 
-新增 `probe_audio(source) -> AudioStreamInfo(codec, channels)`，用 `ffprobe -select_streams a:0 -show_entries stream=codec_name,channels`。没有音轨时与时长探测一样报 `MEDIA_PROCESSING_FAILED`。
+新增 `probe_audio(source) -> AudioStream(codec, channels)`，用 `ffprobe -select_streams a:0 -show_entries stream=codec_name,channels`。没有音轨时与时长探测一样报 `MEDIA_PROCESSING_FAILED`。
 
 ### 6.2 `to_web_audio`
 
+- 两条命令都以 `-map 0:a:0` 开头，保证处理的就是探测的那条音轨。
 - `codec == "aac"`：`-vn -c:a copy -movflags +faststart`。命令失败（如容器不兼容）时删除半成品，改走重新编码。
 - 否则：`-vn -c:a aac -b:a 160k -ar 44100 -movflags +faststart`；`channels > 2` 时加 `-ac 2`，否则保留原声道数。
 - `MediaProcessor` 端口签名不变（`to_web_audio(source, target) -> Path`），探测在适配器内部完成。

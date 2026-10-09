@@ -80,7 +80,8 @@ def test_web_audio_copies_aac_stream(tmp_path: Path) -> None:
         ["ffprobe", *AUDIO_PROBE, str(tmp_path / "in.mp4")],
         [
             "ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(tmp_path / "in.mp4"),
-            "-vn", "-c:a", "copy", "-movflags", "+faststart", str(tmp_path / "out.m4a"),
+            "-map", "0:a:0", "-vn", "-c:a", "copy", "-movflags", "+faststart",
+            str(tmp_path / "out.m4a"),
         ],
     ]  # fmt: skip
 
@@ -95,7 +96,7 @@ def test_web_audio_reencodes_when_copy_fails(tmp_path: Path) -> None:
     assert len(runner.calls) == 3
     assert runner.calls[2] == [
         "ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(tmp_path / "in.mkv"),
-        "-vn", *ENCODE_TAIL, str(target),
+        "-map", "0:a:0", "-vn", *ENCODE_TAIL, str(target),
     ]  # fmt: skip
     assert not target.exists()
 
@@ -112,7 +113,7 @@ def test_web_audio_encodes_other_codecs_keeping_stereo(
 
     assert runner.calls[1] == [
         "ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", str(tmp_path / "in.webm"),
-        "-vn", *downmix, *ENCODE_TAIL, str(tmp_path / "out.m4a"),
+        "-map", "0:a:0", "-vn", *downmix, *ENCODE_TAIL, str(tmp_path / "out.m4a"),
     ]  # fmt: skip
 
 

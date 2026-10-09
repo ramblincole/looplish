@@ -4,7 +4,12 @@ from collections.abc import Sequence
 import pytest
 
 from looplish_api.domain.models import SegmentationOptions, Sentence, Transcript, Word
-from looplish_api.domain.segmentation import build_sentences, is_punctuated
+from looplish_api.domain.segmentation import (
+    PUNCTUATION_WINDOW,
+    _locally_punctuated,
+    build_sentences,
+    is_punctuated,
+)
 
 
 def words(*items: tuple[float, float, str]) -> tuple[Word, ...]:
@@ -497,3 +502,71 @@ def test_random_timelines_satisfy_invariants(seed: int) -> None:
     result = segment(source, duration, options)
 
     assert build_sentences(source, duration, options) == result
+
+
+@pytest.mark.parametrize("seed", range(100))
+def test_random_unpunctuated_timelines_satisfy_invariants(seed: int) -> None:
+    generator = random.Random(seed)
+    source, duration = random_timeline(generator)
+    # 去掉句末标点后走的是纯停顿路径，同样要满足全部不变量。
+    stripped = tuple(
+        Word(word.start, word.end, word.text.rstrip(".?!"))
+        for word in source
+        if word.text.rstrip(".?!").strip()
+    )
+    if not stripped:
+        return
+    options = SegmentationOptions(
+        min_duration=generator.choice([0.5, 1.0, 2.0]),
+        max_duration=generator.choice([3.0, 6.0, 14.0]),
+        hard_pause=generator.choice([0.5, 0.75, 1.5]),
+    )
+
+    result = segment(stripped, duration, options)
+
+    assert build_sentences(stripped, duration, options) == result
+
+
+def test_unpunctuated_stretch_inside_punctuated_transcript_still_splits_on_pause() -> None:
+    head = spoken(*[" We", " are", " here."] * 10)
+    cursor = head[-1].end + 1.0
+    tail: list[Word] = []
+    for _ in range(15):
+        phrase = spoken(" and", " then", " we", " went", start=cursor, length=0.4)
+        tail.extend(phrase)
+        cursor = phrase[-1].end + 1.0
+
+    result = segment(head + tuple(tail), cursor + 1.0)
+
+    assert max(s.speech_end - s.speech_start for s in result) < 20
+    assert texts(result)[-1] == "and then we went"
+
+
+def test_locally_punctuated_window_boundaries() -> None:
+    terminal = PUNCTUATION_WINDOW + 5
+    items = spoken(*[" Word"] * (2 * PUNCTUATION_WINDOW + 10))
+    items = (
+        *items[:terminal],
+        Word(items[terminal].start, items[terminal].end, " end."),
+        *items[terminal + 1 :],
+    )
+
+    flags = _locally_punctuated(items)
+
+    assert flags[terminal - PUNCTUATION_WINDOW] is True
+    assert flags[terminal - PUNCTUATION_WINDOW - 1] is False
+    assert flags[terminal + PUNCTUATION_WINDOW] is True
+    assert flags[terminal + PUNCTUATION_WINDOW + 1] is False
+
+
+def test_locally_punctuated_without_terminal_is_all_false() -> None:
+    assert _locally_punctuated(spoken(" a", " b", " c")) == (False, False, False)
+
+
+def test_capitalised_word_after_long_pause_starts_new_sentence() -> None:
+    head = spoken(" We", " got", " home.", " Then", " we")
+    tail = spoken(" Slept", " well.", start=head[-1].end + 3.0)
+
+    result = segment(head + tail, 10, SegmentationOptions(max_duration=4.0))
+
+    assert texts(result) == ["We got home.", "Then we", "Slept well."]

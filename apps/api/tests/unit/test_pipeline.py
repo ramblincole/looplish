@@ -239,6 +239,16 @@ def test_auto_mode_prefers_asr_over_unpunctuated_subtitles(tmp_path: Path) -> No
     assert result.transcript_source == "asr:recording:test"
 
 
+def test_auto_mode_keeps_unpunctuated_subtitles_for_cloud_backend(tmp_path: Path) -> None:
+    h = harness(tmp_path, subtitles={"source.en.vtt": UNPUNCTUATED_VTT})
+    queued(h, URL, asr_backend="openai")
+
+    result = h.pipeline.run(JOB_ID)
+
+    assert not any(call.startswith("transcribe:") for call in h.calls.log)
+    assert result.transcript_source == "subtitle:source.en.vtt"
+
+
 def test_existing_mode_keeps_unpunctuated_subtitles(tmp_path: Path) -> None:
     h = harness(tmp_path, subtitles={"source.en.vtt": UNPUNCTUATED_VTT})
     queued(h, URL, subtitle_source=SubtitleSource.EXISTING)
