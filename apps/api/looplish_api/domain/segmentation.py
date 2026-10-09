@@ -26,6 +26,10 @@ ABBREVIATIONS = {
 INITIAL = re.compile(r"^[A-HJ-Z]\.$")
 INTERNAL_DOTS = re.compile(r"^(?:[A-Za-z]\.){2,}$")
 DECIMAL_HEAD = re.compile(r"\d\.$")
+# 平均每 40 词至少一个句末标点才算有标点；更稀疏时句末信号不可靠，只能按停顿切。
+PUNCTUATION_DENSITY = 40
+# 兜底拆分只在真实停顿或子句标点处下刀；紧挨着的两个词之间多半是连读，切下去会削掉音节。
+MIN_SPLIT_PAUSE = 0.15
 
 
 def _is_terminal(words: Sequence[Word], index: int) -> bool:
@@ -54,13 +58,27 @@ def _can_cut(words: Sequence[Word], index: int) -> bool:
     return index + 1 >= len(words) or words[index + 1].start >= words[index].end
 
 
-def _initial_groups(words: Sequence[Word], hard_pause: float) -> list[list[Word]]:
+def is_punctuated(words: Sequence[Word]) -> bool:
+    cleaned = tuple(word for word in words if word.text.strip())
+    if not cleaned:
+        return False
+    terminals = sum(1 for index in range(len(cleaned)) if _is_terminal(cleaned, index))
+    return terminals * PUNCTUATION_DENSITY >= len(cleaned)
+
+
+def _continues(words: Sequence[Word], index: int) -> bool:
+    # 左侧没说完、右侧小写续接：多是 VAD 拼接把时间戳拉开的假停顿，不当作句界。
+    return words[index + 1].text.lstrip()[:1].islower()
+
+
+def _initial_groups(words: Sequence[Word], hard_pause: float, punctuated: bool) -> list[list[Word]]:
     groups: list[list[Word]] = []
     current: list[Word] = []
     for index, word in enumerate(words):
         current.append(word)
         pause = words[index + 1].start - word.end if index + 1 < len(words) else 0.0
-        if (_is_terminal(words, index) or pause >= hard_pause) and _can_cut(words, index):
+        paused = pause >= hard_pause and not (punctuated and _continues(words, index))
+        if (_is_terminal(words, index) or paused) and _can_cut(words, index):
             groups.append(current)
             current = []
     if current:
@@ -82,7 +100,10 @@ def _best_split(group: Sequence[Word], options: SegmentationOptions) -> int | No
         if _duration(left) < options.min_duration or _duration(right) < options.min_duration:
             continue
         pause = max(0.0, right[0].start - left[-1].end)
-        punctuation_bonus = 1.5 if CLAUSE.search(left[-1].text.strip()) else 0.0
+        clause = CLAUSE.search(left[-1].text.strip()) is not None
+        if pause < MIN_SPLIT_PAUSE and not clause:
+            continue
+        punctuation_bonus = 1.5 if clause else 0.0
         balance_penalty = abs(_duration(left) - _duration(right)) * 0.05
         # 长停顿权重最高，子句标点次之，同时轻微偏好长度均衡。
         score = pause * 3 + punctuation_bonus - balance_penalty
@@ -110,12 +131,18 @@ def _can_merge(left: Sequence[Word], right: Sequence[Word], options: Segmentatio
     return not _group_is_complete(left) and right[-1].end - left[0].start <= options.max_duration
 
 
-def _merge_short(groups: list[list[Word]], options: SegmentationOptions) -> list[list[Word]]:
+def _merge_short(
+    groups: list[list[Word]], options: SegmentationOptions, punctuated: bool
+) -> list[list[Word]]:
     result = [list(group) for group in groups]
     index = 0
     while index < len(result):
         group = result[index]
-        if _duration(group) >= options.min_duration or _group_is_complete(group):
+        # 有标点时没说完的组不论长短都并入邻句；无标点时只有短碎片需要合并。
+        settled = _group_is_complete(group) or (
+            not punctuated and _duration(group) >= options.min_duration
+        )
+        if settled:
             index += 1
             continue
         previous_ok = index > 0 and _can_merge(result[index - 1], group, options)
@@ -152,11 +179,11 @@ def _sentences(
         start = max(0.0, speech_start - options.lead_pad)
         # 末词在容差内越过媒体时长时，切片至少要包住语音本身。
         end = min(max(media_duration, speech_end), speech_end + options.tail_pad)
-        # 相邻两句最多各占中间静音的一半；两侧共用同一个中点，浮点误差也不会造成重叠。
+        # 留白可以用满句间空隙，但不覆盖邻句的语音；相邻窗口因此可能重叠，逐句播放不受影响。
         if index > 0:
-            start = max(start, (groups[index - 1][-1].end + speech_start) / 2)
+            start = max(start, groups[index - 1][-1].end)
         if index + 1 < len(groups):
-            end = min(end, (speech_end + groups[index + 1][0].start) / 2)
+            end = min(end, groups[index + 1][0].start)
         output.append(
             Sentence(
                 index=index,
@@ -187,7 +214,8 @@ def build_sentences(
         if current.start < previous.start:
             raise ValueError("word timeline must be monotonic")
     # 流程固定为初分组、拆长、并短、加留白，确保同输入得到同结果。
-    initial = _initial_groups(cleaned, options.hard_pause)
+    punctuated = is_punctuated(cleaned)
+    initial = _initial_groups(cleaned, options.hard_pause, punctuated)
     split = [part for group in initial for part in _split_long(group, options)]
-    merged = _merge_short(split, options)
+    merged = _merge_short(split, options, punctuated)
     return _sentences(merged, media_duration, options)
