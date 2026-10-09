@@ -21,7 +21,7 @@ const LANGUAGE_SUGGESTIONS = [
   { value: "es", label: "西班牙语" }
 ];
 
-// 步长决定读数的小数位；取值需与服务端默认值对齐（如 hardPause 0.75、leadPad 0.2）。
+// 步长决定读数的小数位；取值需与服务端默认值对齐（如 hardPause 0.75、leadPad 0.3）。
 const SLIDERS: Record<SegmentField, { step: number; digits: number }> = {
   minDuration: { step: 0.1, digits: 1 },
   maxDuration: { step: 0.5, digits: 1 },

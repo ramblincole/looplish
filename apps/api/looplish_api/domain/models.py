@@ -98,9 +98,9 @@ class Sentence:
 @dataclass(frozen=True, slots=True)
 class SegmentationOptions:
     min_duration: float = 1.0
-    max_duration: float = 14.0
+    max_duration: float = 30.0
     hard_pause: float = 0.75
-    lead_pad: float = 0.20
+    lead_pad: float = 0.30
     tail_pad: float = 0.40
     min_words: int = 2
 

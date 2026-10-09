@@ -202,9 +202,9 @@ Every setting is an environment variable prefixed with `LOOPLISH_`, and can also
 | `LOOPLISH_ASR_BATCH_SIZE` | `8` | faster-whisper batch size (1 – 64); `1` disables batched inference |
 | `LOOPLISH_SUBTITLE_SOURCE` | `auto` | Subtitle source: `auto` / `existing` / `asr` |
 | `LOOPLISH_SUBTITLE_LANGUAGES` | `en,en-US,en-GB` | Preferred subtitle languages |
-| `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `14.0` | Minimum / maximum sentence length |
-| `LOOPLISH_SEG_HARD_PAUSE_SECONDS` | `0.75` | A pause longer than this always ends a sentence |
-| `LOOPLISH_SEG_LEAD_PAD_SECONDS` / `LOOPLISH_SEG_TAIL_PAD_SECONDS` | `0.20` / `0.40` | Padding before / after each sentence |
+| `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `30.0` | Minimum / maximum sentence length; the maximum is only a safety net, and long sentences are split only at pauses or commas |
+| `LOOPLISH_SEG_HARD_PAUSE_SECONDS` | `0.75` | When the transcript lacks punctuation, a pause longer than this ends a sentence; punctuated transcripts follow sentence-ending punctuation |
+| `LOOPLISH_SEG_LEAD_PAD_SECONDS` / `LOOPLISH_SEG_TAIL_PAD_SECONDS` | `0.30` / `0.40` | Padding before / after each sentence, up to the whole gap but never into a neighbouring sentence |
 | `LOOPLISH_ALLOW_LOCAL_PATHS` | empty | Allow creating jobs from paths on the server; when empty, allowed only on a loopback address |
 
 </details>

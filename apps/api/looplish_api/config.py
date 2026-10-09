@@ -51,9 +51,9 @@ class Settings(BaseSettings):
     subtitle_source: SubtitleSource = SubtitleSource.AUTO
     subtitle_languages: str = "en,en-US,en-GB"
     seg_min_seconds: float = 1.0
-    seg_max_seconds: float = 14.0
+    seg_max_seconds: float = 30.0
     seg_hard_pause_seconds: float = 0.75
-    seg_lead_pad_seconds: float = 0.20
+    seg_lead_pad_seconds: float = 0.30
     seg_tail_pad_seconds: float = 0.40
     # 是否允许用服务器上的本机文件路径创建任务；不设置时只在监听回环地址时允许。
     allow_local_paths: bool | None = None

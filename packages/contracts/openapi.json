@@ -240,7 +240,7 @@
             "title": "Language"
           },
           "leadPad": {
-            "default": 0.2,
+            "default": 0.3,
             "maximum": 2.0,
             "minimum": 0.0,
             "title": "Leadpad",
@@ -252,7 +252,7 @@
             "type": "boolean"
           },
           "maxDuration": {
-            "default": 14.0,
+            "default": 30.0,
             "maximum": 60.0,
             "minimum": 2.0,
             "title": "Maxduration",

@@ -200,9 +200,9 @@ LOOPLISH_WEB_DIST_DIR=apps/web/dist uv run --project apps/api --extra local-asr 
 | `LOOPLISH_ASR_BATCH_SIZE` | `8` | faster-whisper 的批量识别大小（1 – 64）；设为 `1` 时不启用批量识别 |
 | `LOOPLISH_SUBTITLE_SOURCE` | `auto` | 字幕来源：`auto` / `existing` / `asr` |
 | `LOOPLISH_SUBTITLE_LANGUAGES` | `en,en-US,en-GB` | 优先使用的字幕语言 |
-| `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `14.0` | 单句最短 / 最长时长 |
-| `LOOPLISH_SEG_HARD_PAUSE_SECONDS` | `0.75` | 超过这个停顿一定断句 |
-| `LOOPLISH_SEG_LEAD_PAD_SECONDS` / `LOOPLISH_SEG_TAIL_PAD_SECONDS` | `0.20` / `0.40` | 句首 / 句尾留白 |
+| `LOOPLISH_SEG_MIN_SECONDS` / `LOOPLISH_SEG_MAX_SECONDS` | `1.0` / `30.0` | 单句最短 / 最长时长；最长只作兜底，超长句只在停顿或逗号处拆开 |
+| `LOOPLISH_SEG_HARD_PAUSE_SECONDS` | `0.75` | 转写缺少标点时，超过这个停顿就断句；有标点时以句末标点为准 |
+| `LOOPLISH_SEG_LEAD_PAD_SECONDS` / `LOOPLISH_SEG_TAIL_PAD_SECONDS` | `0.30` / `0.40` | 句首 / 句尾留白，最多用满句间空隙，不会盖到相邻句 |
 | `LOOPLISH_ALLOW_LOCAL_PATHS` | 空 | 是否允许用服务器本机路径创建任务；留空时仅在监听回环地址时允许 |
 
 </details>
